@@ -69,6 +69,16 @@ with st.sidebar:
     LIGHT = st.toggle("☀️ Light mode", value=False, key="lightmode")
 PAL = PALETTES["light" if LIGHT else "dark"]
 st.session_state["_dark"] = not LIGHT
+with st.sidebar:
+    st.divider()
+    st.markdown("**💬 Quick ask the assistant**")
+    qa = st.text_input("quickask", placeholder="e.g. How does NABIL look?",
+                       label_visibility="collapsed", key="sidebar_qa")
+    if qa:
+        with st.spinner("…"):
+            _ans, _ = assistant.answer(qa, [], scores, meta)
+        st.info(_ans)
+    st.caption("Open the **Assistant** page for full chat →")
 
 CSS = f"""
 <style>
@@ -120,6 +130,37 @@ table.t tr:hover td {{ background:var(--card2); }}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
+
+if LIGHT:
+    st.markdown("""<style>
+/* ===== light-mode widget overrides (Streamlit base theme is dark) ===== */
+[data-testid="stTextInput"] input, [data-testid="stNumberInput"] input, [data-baseweb="input"] input,
+[data-baseweb="textarea"] textarea, [data-testid="stChatInput"] textarea { background:#ffffff !important; color:#0f172a !important; }
+[data-baseweb="input"], [data-baseweb="base-input"], [data-baseweb="textarea"] { background:#ffffff !important; border-color:#d4dbe8 !important; }
+[data-testid="stNumberInput"] button { background:#eef2f9 !important; color:#0f172a !important; }
+[data-baseweb="select"] > div { background:#ffffff !important; border-color:#d4dbe8 !important; }
+[data-baseweb="select"] span, [data-baseweb="select"] div { color:#0f172a !important; }
+[data-baseweb="popover"] [role="listbox"], [data-baseweb="menu"], ul[role="listbox"], [data-baseweb="popover"] > div { background:#ffffff !important; }
+[role="option"], [role="option"] * { background:#ffffff !important; color:#0f172a !important; }
+[role="option"]:hover { background:#eef2f9 !important; }
+label, .stRadio label, .stCheckbox label, [data-testid="stWidgetLabel"] *, [role="radiogroup"] label,
+.stSlider label, [data-testid="stForm"] label, [data-baseweb="radio"] div { color:#0f172a !important; }
+[data-testid="stThumbValue"], [data-testid="stTickBarMin"], [data-testid="stTickBarMax"] { color:#0f172a !important; }
+[data-testid="stExpander"] { background:#ffffff !important; border:1px solid #e2e8f2 !important; border-radius:12px; }
+[data-testid="stExpander"] summary, [data-testid="stExpander"] summary *, details summary, details summary * { color:#0f172a !important; }
+.stTabs [data-baseweb="tab"] { color:#334155 !important; background:#f0f4fa !important; border-color:#e2e8f2 !important; }
+.stTabs [aria-selected="true"] { color:#0f172a !important; background:rgba(34,197,94,.14) !important; }
+[data-testid="stMetricValue"] { color:#0f172a !important; } [data-testid="stMetricLabel"] * { color:#566174 !important; }
+[data-testid="stMetricDelta"] { color:#0f172a !important; }
+[data-testid="stChatMessage"] { background:#f7f9fd !important; border:1px solid #e9eef6; }
+[data-testid="stChatMessage"] * { color:#0f172a !important; }
+.stButton>button[kind="secondary"], button[data-testid="baseButton-secondary"], [data-testid="stForm"] .stButton>button { color:#0f172a; }
+.stButton>button:not([kind="primary"]) { background:#eef2f9 !important; color:#0f172a !important; border:1px solid #d4dbe8 !important; }
+[data-testid="stNotification"], .stAlert, .stAlert * { color:#0f172a !important; }
+[data-testid="stCaptionContainer"] *, .stCaption { color:#566174 !important; }
+[data-testid="stSidebar"] label, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] a { color:#0f172a !important; }
+[data-testid="stSidebarNav"] a span { color:#0f172a !important; }
+</style>""", unsafe_allow_html=True)
 
 
 def html_table(df, color_cols=()):
@@ -218,6 +259,49 @@ def analyze_stock(sym):
     add("Market regime", "Market momentum (1-mo)", 1 if mm > .01 else -1 if mm < -.01 else 0, f"overall market {mm:+.1%} over ~1 month")
     add("Market regime", "Market breadth", 1 if br > .55 else -1 if br < .45 else 0, f"{br*100:.0f}% of stocks rising lately")
     return items
+
+
+@st.cache_data(show_spinner=False)
+def stock_writeup(sym, h, _asof):
+    """Investment-perspective text for a stock: LLM if a key is set, else rich template."""
+    row = scores[scores.symbol == sym].iloc[0]
+    items = analyze_stock(sym)
+    stock_items = [it for it in items if it["group"] != "Market regime"]
+    bull = [it["label"] for it in stock_items if it["verdict"] == "Bullish"]
+    bear = [it["label"] for it in stock_items if it["verdict"] == "Bearish"]
+    p = {hh: float(row[f"p{hh}"]) for hh in H}
+    vol = float(row["vol10"]) if pd.notna(row["vol10"]) else None
+    cohort = fresh_scores if row["fresh"] else scores
+    rank = int((cohort[f"p{h}"] > row[f"p{h}"]).sum()) + 1; ntot = len(cohort)
+    tone = "net-bullish" if len(bull) > len(bear) + 1 else "net-bearish" if len(bear) > len(bull) + 1 else "mixed"
+    riskw = "low" if (vol or 6) < 5 else "high" if (vol or 6) > 9 else "moderate"
+    facts = (f"Stock={sym}. Up-probabilities: " + ", ".join(f"{hh}-day={p[hh]*100:.0f}%" for hh in H) +
+             f". 10-day volatility(risk)={vol:.1f}% ({riskw}). Conviction rank #{rank} of {ntot} stocks. "
+             f"Signal balance: {len(bull)} bullish ({', '.join(bull[:4]) or 'none'}), "
+             f"{len(bear)} bearish ({', '.join(bear[:4]) or 'none'}). Overall {tone}. "
+             f"As-of {ASOF.get(sym, meta['as_of'])}.")
+    llm = assistant.narrative(facts)
+    if llm:
+        return llm, "llm"
+    # rich templated fallback
+    p10 = p.get(10, list(p.values())[0])
+    lean = "leans up" if p10 >= .5 else "leans down"
+    para1 = (f"**{sym}**'s signals are **{tone}** — {len(bull)} point up "
+             f"({', '.join(bull[:3]) if bull else 'none'}) versus {len(bear)} pointing down "
+             f"({', '.join(bear[:3]) if bear else 'none'}). Over ~2 weeks the model {lean} with a "
+             f"**{p10*100:.0f}%** up-probability, ranking **#{rank} of {ntot}** by conviction, at "
+             f"**{riskw}** risk ({vol:.1f}% expected volatility)." if vol else "")
+    if p10 >= .53 and riskw != "high":
+        stance = ("For a **cautious** investor it's a reasonable *watch* candidate given the up-lean and "
+                  "contained risk; size small and confirm with your own view. For an **aggressive** investor "
+                  "it screens as one of the stronger names today.")
+    elif p10 >= .53:
+        stance = ("The up-lean is there but risk is elevated — **aggressive** investors only, with tight "
+                  "position sizing; **cautious** investors may prefer to wait.")
+    else:
+        stance = ("The model does **not** lean bullish here right now, so most investors should **wait or "
+                  "avoid**; revisit if momentum and breadth improve.")
+    return f"{para1}\n\n{stance}\n\n_Not financial advice — the model is wrong ~45% of the time._", "template"
 
 
 # =========================================================================== #
@@ -333,6 +417,14 @@ def page_explore():
                             f'<span class="txt">{it["text"]}</span></div>'
                             f'<span class="badge" style="background:{it["color"]}22;color:{it["color"]};'
                             f'border:1px solid {it["color"]}55">{it["verdict"]}</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="sec">💡 Investment perspective</div>', unsafe_allow_html=True)
+    with st.spinner("writing perspective…"):
+        writeup, src = stock_writeup(sym, h, ASOF.get(sym, meta["as_of"]))
+    st.markdown(f'<div class="readout">{writeup}</div>', unsafe_allow_html=True)
+    if src == "template":
+        st.caption("💡 Auto-generated from the model's data. Add a free GROQ_API_KEY secret for richer, "
+                   "LLM-written perspectives.")
+
     st.markdown('<div class="sec">Across horizons</div>', unsafe_allow_html=True)
     cols = st.columns(len(H))
     for cc, hh in zip(cols, H):
@@ -432,21 +524,35 @@ def page_assistant():
     st.markdown('<p class="lead">Ask about any stock, how accurate the model is, how it works, or how to invest. '
                 'Grounded in live predictions — not financial advice.</p>', unsafe_allow_html=True)
     if "chat" not in st.session_state:
-        st.session_state.chat = [("assistant", "Hi! I'm the NEPSE Signals assistant 🤖 Ask me things like "
-                                  "*“How does NABIL look?”*, *“How accurate is the model?”*, or *“What should a "
-                                  "cautious investor do?”*")]
+        st.session_state.chat = [("assistant", "Hi! I'm the NEPSE Signals assistant 🤖 Ask me about a stock "
+                                  "(*“How does NABIL look?”*), the model's accuracy, or what to do as an investor.")]
+
+    def ask(qq):
+        st.session_state.chat.append(("user", qq))
+        resp, _ = assistant.answer(qq, st.session_state.chat[:-1], scores, meta)
+        st.session_state.chat.append(("assistant", resp))
+
+    st.markdown("**Try one:**")
+    sugg = ["How accurate is the model?", "Top stocks to watch right now?",
+            "How does NABIL look?", "What should a cautious investor do?",
+            "How does the model work?", "Which stocks are riskiest?"]
+    cols = st.columns(3)
+    for i, s in enumerate(sugg):
+        if cols[i % 3].button(s, use_container_width=True, key=f"sugg{i}"):
+            with st.spinner("thinking…"):
+                ask(s)
+            st.rerun()
+    cc1, cc2 = st.columns([4, 1])
+    if cc2.button("🗑️ Clear", use_container_width=True):
+        del st.session_state.chat; st.rerun()
+
     for role, content in st.session_state.chat:
         with st.chat_message(role, avatar="📈" if role == "assistant" else None):
             st.markdown(content)
     if q := st.chat_input("Ask about a stock or the model…"):
-        st.session_state.chat.append(("user", q))
-        with st.chat_message("user"):
-            st.markdown(q)
-        with st.chat_message("assistant", avatar="📈"):
-            with st.spinner("thinking…"):
-                resp, used = assistant.answer(q, st.session_state.chat[:-1], scores, meta)
-            st.markdown(resp)
-        st.session_state.chat.append(("assistant", resp))
+        with st.spinner("thinking…"):
+            ask(q)
+        st.rerun()
 
 
 # --------------------------------------------------------------------------- #

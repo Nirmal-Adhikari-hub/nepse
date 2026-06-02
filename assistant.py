@@ -116,6 +116,24 @@ def rule_based(query, scores, meta):
             "financial advice.")
 
 
+def narrative(facts_text, provider=None):
+    """LLM investment perspective for one stock. Returns text, or None if no LLM."""
+    provider = provider or get_provider()
+    if provider is None:
+        return None
+    msgs = [
+        {"role": "system", "content": SYSTEM + " TASK: write a concise (~150 word) INVESTMENT "
+         "PERSPECTIVE for ONE stock in 2 short paragraphs: (1) what the model's signals say — momentum, "
+         "trend, strength, risk, and the bull-vs-bear balance; (2) a bottom-line stance for conservative "
+         "vs aggressive investors. Plain English, balanced, honest about the ~55% accuracy. End with a "
+         "one-line italic '_Not financial advice._'. Use ONLY the data provided; never invent numbers."},
+        {"role": "user", "content": facts_text}]
+    try:
+        return llm_reply(msgs, provider)
+    except Exception:
+        return None
+
+
 def answer(query, history, scores, meta):
     provider = get_provider()
     ctx = grounding(query, scores, meta)
