@@ -147,6 +147,15 @@ table.t tr:hover td {{ background:var(--card2); }}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
+st.markdown("""<style>
+/* floating chat bubble (Facebook-style) — the single popover on the page */
+div[data-testid="stPopover"] { position: fixed !important; bottom: 22px; right: 22px; z-index: 99999; }
+div[data-testid="stPopover"] > div > button { border-radius: 999px !important;
+  background: linear-gradient(90deg,#22c55e,#16a34a) !important; color:#04210f !important; font-weight:800 !important;
+  padding:.6rem 1.1rem !important; box-shadow:0 10px 28px -6px rgba(34,197,94,.7) !important; border:0 !important; }
+div[data-testid="stPopoverBody"] { width: 360px !important; max-width: 90vw !important; }
+@media (max-width:640px){ div[data-testid="stPopoverBody"]{ width: 92vw !important; } }
+</style>""", unsafe_allow_html=True)
 
 if LIGHT:
     st.markdown("""<style>
@@ -298,6 +307,13 @@ def analyze_stock(sym):
     add("Market regime", "Market momentum (1-mo)", 1 if mm > .01 else -1 if mm < -.01 else 0, f"overall market {mm:+.1%} over ~1 month")
     add("Market regime", "Market breadth", 1 if br > .55 else -1 if br < .45 else 0, f"{br*100:.0f}% of stocks rising lately")
     return items
+
+
+@st.cache_data(show_spinner=False)
+def metric_explain(sym, label, text, _asof):
+    """LLM micro-explanation of one metric for one stock (cached; friendly fallback)."""
+    r = assistant.explain_metric(label, text, sym)
+    return r or (f"**{label}** — {text}. (Turn on the LLM for a fuller explanation.)")
 
 
 @st.cache_data(show_spinner=False)
@@ -478,20 +494,28 @@ def page_explore():
     tone = ("a net-bullish picture" if bull > bear + 1 else "a net-bearish picture" if bear > bull + 1 else "a mixed picture")
     st.markdown(f'<div class="readout">Across its signals, {sym} shows <b>{tone}</b> ({bull} bullish vs {bear} bearish on '
                 f'stock-specific metrics). The model weighs these together into its {p_up*100:.0f}% up-probability.</div>', unsafe_allow_html=True)
+    st.caption("💡 Tap **Explain** on any signal for a plain-English, AI-written explanation of what it means for this stock.")
     groups = ["Trend & Momentum", "Strength vs range", "Risk & Volatility", "Volume & Interest", "Market regime"]
     for g in groups:
         gi = [it for it in items if it["group"] == g]
         if not gi: continue
         with st.expander(f"**{g}**", expanded=(g in ["Trend & Momentum", "Strength vs range"])):
             for it in gi:
-                st.markdown(f'<div class="metric-row"><div><span class="lab">{it["label"]}</span><br>'
-                            f'<span class="txt">{it["text"]}</span></div>'
-                            f'<span class="badge" style="background:{it["color"]}22;color:{it["color"]};'
-                            f'border:1px solid {it["color"]}55">{it["verdict"]}</span></div>', unsafe_allow_html=True)
+                c1, c2, c3 = st.columns([6, 2, 1.4])
+                c1.markdown(f"**{it['label']}**  \n<span style='color:{PAL['mut']};font-size:.86rem'>{it['text']}</span>", unsafe_allow_html=True)
+                c2.markdown(f"<span class='badge' style='background:{it['color']}22;color:{it['color']};"
+                            f"border:1px solid {it['color']}55'>{it['verdict']}</span>", unsafe_allow_html=True)
+                key = f"ex_{sym}_{it['label']}"
+                if c3.button("💡 Explain", key="b_" + key):
+                    st.session_state[key] = True
+                if st.session_state.get(key):
+                    with st.spinner("explaining…"):
+                        st.info(metric_explain(sym, it["label"], it["text"], sym_asof))
     st.markdown('<div class="sec">💡 Investment perspective</div>', unsafe_allow_html=True)
     with st.spinner("writing perspective…"):
         writeup, src = stock_writeup(sym, h, ASOF.get(sym, meta["as_of"]))
-    st.markdown(f'<div class="readout">{writeup}</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown(writeup)
     if src == "template":
         st.caption("💡 Written from the model's live data. For richer LLM-written perspectives, add a free "
                    "GROQ_API_KEY (or your HF_TOKEN) under Space → Settings → Variables & secrets.")
@@ -630,6 +654,32 @@ def page_assistant():
             ask(q)
         st.rerun()
 
+
+# ---- floating chat widget (openable on every page) ------------------------ #
+def chat_widget():
+    if "chat" not in st.session_state:
+        st.session_state.chat = [("assistant", "Hi! 👋 Ask me about any NEPSE stock — e.g. *“how does NABIL look?”*")]
+    with st.popover("💬  Ask the assistant", use_container_width=False):
+        st.markdown("**📈 NEPSE Assistant**  ·  plain-English stock help")
+        hist = st.container(height=320)
+        with st.form("floatchat", clear_on_submit=True):
+            cols = st.columns([5, 1])
+            q = cols[0].text_input("msg", placeholder="e.g. how does HDL look?", label_visibility="collapsed")
+            sent = cols[1].form_submit_button("➤")
+        if sent and q:
+            st.session_state.chat.append(("user", q))
+            try:
+                resp, _ = assistant.answer(q, st.session_state.chat[:-1], scores, meta)
+            except Exception:
+                resp = "Sorry — I hit a snag. Try again in a moment."
+            st.session_state.chat.append(("assistant", resp))
+        with hist:                       # render AFTER processing so the reply shows without a rerun
+            for role, content in st.session_state.chat[-10:]:
+                with st.chat_message(role, avatar="📈" if role == "assistant" else None):
+                    st.markdown(content)
+
+
+chat_widget()
 
 # --------------------------------------------------------------------------- #
 nav = st.navigation([

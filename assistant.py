@@ -126,18 +126,34 @@ def friendly_stock(sym, scores, meta):
             f"- **Risk:** {riskw}{f' (≈{vol:.0f}% typical swing)' if vol else ''}\n\n"
             f"**Bottom line:** {bottom}\n\n"
             f"_Educational only, not financial advice — the model is right ~6 times in 10 on its confident calls._\n\n"
-            f"<sub>🔎 the numbers: chance of rising — 1wk {p5*100:.0f}%, 2wk {p10*100:.0f}%, 1mo {p20*100:.0f}%</sub>")
+            f"*🔎 the numbers — chance of rising: 1wk {p5*100:.0f}% · 2wk {p10*100:.0f}% · 1mo {p20*100:.0f}%*")
 
 
 ACCURACY_PLAIN = (
-    "Think of it like a weather forecast 🌦️\n\n"
-    "- When the model says a stock will **go up**, it's right about **57 times out of 100** overall — a bit "
-    "better than a coin flip (50/50).\n"
-    "- On the handful of stocks it's **most confident** about, it's right about **64–65 times out of 100**.\n"
-    "- For the **whole market's** direction it's right about **56 times out of 100** (up to ~68 on its surest weeks).\n\n"
-    "Important: this does **not** mean 'the model is sure 57% of the time'. It means *'when it makes a call, it's "
-    "correct that often.'* That's a genuine edge — markets are extremely hard and even pros rarely beat ~60% "
-    "honestly — but it's far from certain. Treat each pick as **tilting the odds in your favour**, not a guarantee.")
+    "**The simple version:** imagine the model makes **100 predictions**. 🎯\n\n"
+    "- About **57 turn out right**, 43 wrong — a little better than flipping a coin (which is 50/50).\n"
+    "- For the stocks it's **most sure about**, about **64–65 out of 100** are right.\n"
+    "- For the **overall market's** up/down direction, about **56 out of 100** (up to ~68 on its surest weeks).\n\n"
+    "So when we say *“57% accurate”* we mean **“right 57 times out of every 100 calls”** — **not** “sure 57% of "
+    "the time.” It's a real but small edge: enough to **tilt the odds in your favour** across many picks over time, "
+    "but never a guarantee on any single stock. (Markets are brutally hard — even professionals rarely beat ~60% honestly.)")
+
+
+def explain_metric(metric, value_text, sym, provider=None):
+    """LLM micro-explanation of one indicator's current reading for one stock. None if no LLM."""
+    provider = provider or get_provider()
+    if provider is None:
+        return None
+    msgs = [{"role": "system", "content":
+             "You explain ONE stock indicator to a beginner in 2 short, friendly sentences: (1) what it measures "
+             "in plain words, (2) what THIS specific reading suggests for the stock. No jargon dumps, honest, never "
+             "give a buy/sell order, no price targets."},
+            {"role": "user", "content": f"Stock: {sym}. Indicator: {metric}. Current reading: {value_text}. "
+             f"Explain simply what it means for {sym} right now."}]
+    try:
+        return llm_reply(msgs, provider)
+    except Exception:
+        return None
 
 
 def rule_based(query, scores, meta):
