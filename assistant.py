@@ -18,8 +18,10 @@ import requests
 SYSTEM = (
     "You are the assistant for 'NEPSE Signals', a website that gives honest, "
     "machine-learning DIRECTION forecasts for Nepal Stock Exchange (NEPSE) stocks. "
-    "Persona: friendly, concise, plain-English first with optional detail; honest about "
-    "uncertainty; never hypes. House rules you must follow: (1) This is educational, NOT "
+    "Persona: warm, friendly financial explainer for EVERYDAY people. ALWAYS lead with a one-line plain "
+    "verdict (e.g. '🟢 NABIL looks mildly positive') and a clear BOTTOM-LINE takeaway. Weave numbers in "
+    "lightly and in plain words ('about 6 in 10 odds'); NEVER dump raw probability lists. End with one short "
+    "optional technical line for nerds. Honest about uncertainty; never hypes. House rules: (1) This is educational, NOT "
     "financial advice — remind users when they ask what to buy. (2) The model predicts "
     "DIRECTION (up/down probability), not exact prices. (3) On HIGH-CONVICTION calls (top-20% confidence) "
     "it's right ~62% of the time; overall ~54% — modest but real, not random. Low-conviction signals are "
@@ -86,35 +88,86 @@ def grounding(query, scores, meta):
     return "\n".join(facts)
 
 
+def _lean(p):
+    c = (p - .5) * 100
+    if c >= 6:  return "clearly up", "🟢"
+    if c >= 1.5: return "slightly up", "🟢"
+    if c > -1.5: return "flat / uncertain", "🟡"
+    if c > -6:  return "slightly down", "🔴"
+    return "clearly down", "🔴"
+
+
+def friendly_stock(sym, scores, meta):
+    """Plain-language, recommendation-style summary of one stock (no jargon up front)."""
+    r = scores[scores.symbol == sym]
+    if not len(r):
+        return None
+    r = r.iloc[0]; asof = meta.get("asof", {}).get(sym, meta["as_of"])
+    p5, p10, p20 = float(r["p5"]), float(r["p10"]), float(r["p20"])
+    lm, em = _lean(p10); ll, _ = _lean(p20)
+    vol = float(r["vol10"]) if r["vol10"] == r["vol10"] else None
+    riskw = "low" if (vol or 6) < 5 else "high" if (vol or 6) > 9 else "moderate"
+    avg = (p5 + p10 + p20) / 3
+    if avg >= .53:   head = f"🟢 **{sym} looks broadly positive** right now"
+    elif avg <= .47: head = f"🔴 **{sym} looks weak** right now"
+    else:            head = f"🟡 **{sym} is a mixed bag** right now"
+    if p10 >= .53 and (vol or 6) < 9:
+        bottom = "Could be worth a look for a 1–2 week move — keep the position small and confirm with your own view."
+    elif p20 >= .53 and p10 < .5:
+        bottom = "Soft in the short run but improving over a month — more of a *watch* than a buy-now."
+    elif avg <= .47:
+        bottom = "The model isn't keen here right now — likely one to **avoid or wait** on."
+    else:
+        bottom = "No strong signal either way — better to wait for a clearer setup."
+    stale = "" if asof >= "2026-01-01" else f" _(based on data to {asof})_"
+    return (f"{head}{stale}\n\n"
+            f"- **Next 1–2 weeks:** {lm} {em}\n"
+            f"- **Next ~month:** {ll}\n"
+            f"- **Risk:** {riskw}{f' (≈{vol:.0f}% typical swing)' if vol else ''}\n\n"
+            f"**Bottom line:** {bottom}\n\n"
+            f"_Educational only, not financial advice — the model is right ~6 times in 10 on its confident calls._\n\n"
+            f"<sub>🔎 the numbers: chance of rising — 1wk {p5*100:.0f}%, 2wk {p10*100:.0f}%, 1mo {p20*100:.0f}%</sub>")
+
+
+ACCURACY_PLAIN = (
+    "Think of it like a weather forecast 🌦️\n\n"
+    "- When the model says a stock will **go up**, it's right about **57 times out of 100** overall — a bit "
+    "better than a coin flip (50/50).\n"
+    "- On the handful of stocks it's **most confident** about, it's right about **64–65 times out of 100**.\n"
+    "- For the **whole market's** direction it's right about **56 times out of 100** (up to ~68 on its surest weeks).\n\n"
+    "Important: this does **not** mean 'the model is sure 57% of the time'. It means *'when it makes a call, it's "
+    "correct that often.'* That's a genuine edge — markets are extremely hard and even pros rarely beat ~60% "
+    "honestly — but it's far from certain. Treat each pick as **tilting the odds in your favour**, not a guarantee.")
+
+
 def rule_based(query, scores, meta):
-    """Deterministic grounded answer when no LLM key is set."""
-    q = query.lower(); horizons = meta["horizons"]; asof = meta.get("asof", {})
-    m10 = meta["metrics"].get("10", meta["metrics"].get(10, {}))
+    """Friendly, plain-language grounded answer when no LLM key is set."""
+    q = query.lower()
     tickers = find_tickers(query, list(scores.symbol))
     if tickers:
-        out = []
-        for s in tickers[:3]:
-            out.append(stock_facts(s, scores, asof, horizons))
-        out.append("\n_Direction forecast, not a price target. ~55% accurate — not advice._")
-        return "\n".join(out)
-    if any(w in q for w in ["accura", "how good", "trust", "reliable", "work"]):
-        return (f"On 10-day direction the model is right about **{m10.get('acc')}%** of the time — "
-                f"a real **+{m10.get('edge')} pts** over the naive baseline ({m10.get('maj')}%), and up to "
-                f"**{m10.get('acc20')}%** on its most confident calls. Overfitting check PBO={m10.get('pbo')} "
-                f"(≈0 = trustworthy). It's modest but real — wrong ~45% of the time. Not financial advice.")
-    if any(w in q for w in ["buy", "recommend", "invest", "pick", "should i"]):
-        return ("Use the **Home → Get your personalized recommendation** tool: set your risk appetite, "
-                "horizon and budget and it builds a basket from the model's conviction + risk. "
-                "Remember: educational only, the model is wrong ~45% of the time — never invest what you "
-                "can't afford to lose.")
-    if any(w in q for w in ["how", "model", "method", "feature"]):
-        return ("A global LightGBM model studies ~23 years across the whole NEPSE universe — momentum, "
-                "volatility, RSI, 52-week range, volume and overall-market regime — and predicts each "
-                "stock's up/down probability over 5/10/20 days. It's tested out-of-sample with an "
-                "overfitting check. See **Model & Evidence** for the interactive charts.")
-    return ("I'm the NEPSE Signals assistant. Ask me about a stock (e.g. 'How does NABIL look?'), how "
-            "accurate the model is, how it works, or how to get a recommendation. Educational only — not "
-            "financial advice.")
+        out = [friendly_stock(s, scores, meta) for s in tickers[:2]]
+        out = [o for o in out if o]
+        if out:
+            return "\n\n---\n\n".join(out)
+        return f"I don't have data on that one. Try a ticker like NABIL, NMB, or ADBL."
+    if any(w in q for w in ["accura", "how good", "trust", "reliable", "right", "correct", "%", "percent"]):
+        return ACCURACY_PLAIN
+    if any(w in q for w in ["buy", "recommend", "invest", "pick", "should i", "watch", "top"]):
+        return ("Easiest way: open **Home → 🎯 Get your personalized recommendation**, pick your risk level, "
+                "horizon and budget, and it builds you a basket of the strongest stocks (and warns you if the "
+                "overall market looks weak). Or just ask me *“how does NABIL look?”* for any stock.\n\n"
+                "_Educational only — never invest money you can't afford to lose._")
+    if any(w in q for w in ["how", "model", "method", "feature", "what is"]):
+        return ("In plain terms: the model has studied **23 years** of every NEPSE stock — how prices have been "
+                "moving, how choppy they are, whether they're near highs or lows, trading volume, and the overall "
+                "market mood — and from that it estimates each stock's **odds of rising** over the next week to a "
+                "month. It was tested only on data it had never seen, so the accuracy is honest. See **Model & "
+                "Evidence** for the proof.")
+    return ("Hi! I can help you make sense of NEPSE in plain English 🙂 Try:\n\n"
+            "- *“How does NABIL look?”* — a friendly read on any stock\n"
+            "- *“How accurate is this?”* — what the numbers really mean\n"
+            "- *“What should I buy?”* — how to get a recommendation\n\n"
+            "_Educational only — not financial advice._")
 
 
 def narrative(facts_text, provider=None):

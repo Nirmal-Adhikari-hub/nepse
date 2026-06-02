@@ -309,28 +309,13 @@ def stock_writeup(sym, h, _asof):
              f"Signal balance: {len(bull)} bullish ({', '.join(bull[:4]) or 'none'}), "
              f"{len(bear)} bearish ({', '.join(bear[:4]) or 'none'}). Overall {tone}. "
              f"As-of {ASOF.get(sym, meta['as_of'])}.")
+    facts += (f" It {'beats' if row.get('px10', .5) >= .5 else 'lags'} the market on our outperformance signal "
+              f"({float(row.get('px10', .5))*100:.0f}% odds of outperforming). Write for a normal investor.")
     llm = assistant.narrative(facts)
     if llm:
         return llm, "llm"
-    # rich templated fallback
-    p10 = p.get(10, list(p.values())[0])
-    lean = "leans up" if p10 >= .5 else "leans down"
-    para1 = (f"**{sym}**'s signals are **{tone}** — {len(bull)} point up "
-             f"({', '.join(bull[:3]) if bull else 'none'}) versus {len(bear)} pointing down "
-             f"({', '.join(bear[:3]) if bear else 'none'}). Over ~2 weeks the model {lean} with a "
-             f"**{p10*100:.0f}%** up-probability, ranking **#{rank} of {ntot}** by conviction, at "
-             f"**{riskw}** risk ({vol:.1f}% expected volatility)." if vol else "")
-    if p10 >= .53 and riskw != "high":
-        stance = ("For a **cautious** investor it's a reasonable *watch* candidate given the up-lean and "
-                  "contained risk; size small and confirm with your own view. For an **aggressive** investor "
-                  "it screens as one of the stronger names today.")
-    elif p10 >= .53:
-        stance = ("The up-lean is there but risk is elevated — **aggressive** investors only, with tight "
-                  "position sizing; **cautious** investors may prefer to wait.")
-    else:
-        stance = ("The model does **not** lean bullish here right now, so most investors should **wait or "
-                  "avoid**; revisit if momentum and breadth improve.")
-    return f"{para1}\n\n{stance}\n\n_Not financial advice — the model is wrong ~45% of the time._", "template"
+    # friendly plain-language fallback (shared with the assistant)
+    return assistant.friendly_stock(sym, scores, meta), "template"
 
 
 # =========================================================================== #
@@ -349,6 +334,9 @@ def page_home():
   <div class="mcard"><div class="top">Overall acc (10d)</div><div class="val green">{HEAD['acc']:.1f}%</div><div class="sub">+{HEAD['edge']:.1f} pts vs baseline</div></div>
   <div class="mcard"><div class="top">Overfitting (PBO)</div><div class="val blue">{m10['pbo']:.2f}</div><div class="sub">≈0 → real, not curve-fit</div></div>
   <div class="mcard"><div class="top">Backtest 5d, net</div><div class="val green">{m5['strat_x']:.1f}×</div><div class="sub">vs {m5['bh_x']:.1f}× buy &amp; hold</div></div></div>""", unsafe_allow_html=True)
+
+    with st.expander("🎓 What does \"accuracy\" actually mean here? (plain English)"):
+        st.markdown(assistant.ACCURACY_PLAIN)
 
     # ---- market outlook (the most accurate signal) ----
     try:
@@ -493,8 +481,8 @@ def page_explore():
         writeup, src = stock_writeup(sym, h, ASOF.get(sym, meta["as_of"]))
     st.markdown(f'<div class="readout">{writeup}</div>', unsafe_allow_html=True)
     if src == "template":
-        st.caption("💡 Auto-generated from the model's data. Add a free GROQ_API_KEY secret for richer, "
-                   "LLM-written perspectives.")
+        st.caption("💡 Written from the model's live data. For richer LLM-written perspectives, add a free "
+                   "GROQ_API_KEY (or your HF_TOKEN) under Space → Settings → Variables & secrets.")
 
     st.markdown('<div class="sec">Across horizons</div>', unsafe_allow_html=True)
     cols = st.columns(len(H))
@@ -593,8 +581,10 @@ def page_assistant():
     st.markdown('<div class="nav"><div class="brand">💬 Assistant</div></div>', unsafe_allow_html=True)
     mode = "llm" if assistant.get_provider() else "grounded"
     if mode == "grounded":
-        st.markdown('<div class="expl">💡 Running in <b>grounded</b> mode (free, no API key) — answers come straight from the '
-                    'live model data. For full ChatGPT-style chat, add a free <code>GROQ_API_KEY</code> as a Space secret.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="expl">💡 Running in <b>friendly</b> mode (free, no key) — plain-English answers from the '
+                    'live model data. For full ChatGPT-style conversation, add a free <code>GROQ_API_KEY</code> '
+                    '(get one at console.groq.com) <b>or</b> your <code>HF_TOKEN</code> under '
+                    '<b>Space → Settings → Variables &amp; secrets</b>. No code change needed.</div>', unsafe_allow_html=True)
     st.markdown('<p class="lead">Ask about any stock, how accurate the model is, how it works, or how to invest. '
                 'Grounded in live predictions — not financial advice.</p>', unsafe_allow_html=True)
     if "chat" not in st.session_state:
