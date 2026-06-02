@@ -48,6 +48,10 @@ scores = feats[["symbol"]].copy()
 for h in H:
     scores[f"p{h}"] = models[h].predict(feats[FEATURES].values)
 scores = scores.merge(risk, on="symbol", how="left")
+ASOF = meta.get("asof", {})
+scores["asof"] = scores["symbol"].map(ASOF).fillna(meta["as_of"])
+scores["fresh"] = scores["asof"] >= "2026-01-01"
+fresh_scores = scores[scores["fresh"]].copy()       # current stocks for live signals/recs
 PRICE_SYMS = sorted(set(prices["symbol"]).intersection(scores["symbol"]))
 
 GREEN, RED, BLUE, AMBER, BG, CARD = "#22c55e", "#f87171", "#5eead4", "#fbbf24", "#0a0e1a", "#141b2e"
@@ -204,7 +208,7 @@ def page_home():
         go_btn = st.form_submit_button("🎯  Build my recommendation", use_container_width=True)
     if go_btn:
         h = {"~1 week (5d)": 5, "~2 weeks (10d)": 10, "~1 month (20d)": 20}[hlabel]; pcol = f"p{h}"
-        pool = scores.dropna(subset=["vol10"]).copy()
+        pool = fresh_scores.dropna(subset=["vol10"]).copy()    # only current stocks in recommendations
         qcap = {"Conservative": .4, "Balanced": .7, "Aggressive": 1.0}[risk_app]
         vcap = pool["vol10"].quantile(qcap)
         cand = pool[(pool[pcol] > .5) & (pool["vol10"] <= vcap)].copy()
@@ -229,7 +233,10 @@ def page_home():
             st.caption("Allocations from the model's conviction & GARCH risk. Not advice — wrong ~45% of the time.")
 
     st.markdown('<div class="sec">📍 Today\'s signals</div>', unsafe_allow_html=True)
-    s10 = scores.sort_values("p10", ascending=False)
+    st.markdown(f'<p class="lead">Ranked by 10-day confidence across the <b>{len(fresh_scores)}</b> stocks with '
+                f'current data. (The full {meta["n_stocks"]}-stock universe — incl. NTC, UNL, etc. — is in '
+                f'<b>Explore</b>, each dated.)</p>', unsafe_allow_html=True)
+    s10 = fresh_scores.sort_values("p10", ascending=False)
     f = lambda d: pd.DataFrame({"Stock": d["symbol"].values, "P(up)": (d["p10"].values*100).round(1),
         "Conviction": ((d["p10"].values-.5)*100).round(1), "Risk%": d["vol10"].values.round(1)})
     cfg = {"P(up)": st.column_config.NumberColumn(format="%.1f%%")}
@@ -262,6 +269,11 @@ def page_explore():
 
     row = scores[scores.symbol == sym].iloc[0]
     p_up = float(row[f"p{h}"]); word, col = conviction_word(p_up)
+    sym_asof = ASOF.get(sym, meta["as_of"])
+    if sym_asof < "2026-01-01":
+        st.markdown(f'<div class="disc">🕗 <b>{sym}</b> has data only through <b>{sym_asof}</b> in our sources, '
+                    f'so this forecast is computed as of that date — treat it as historical, not live.</div>',
+                    unsafe_allow_html=True)
     fig, info = forecast_figure(sym, h)
 
     # signal cards
