@@ -1,0 +1,43 @@
+name: Daily data refresh → redeploy
+
+# Re-pulls NEPSE end-of-day data, regenerates the app's data bundles, commits,
+# and (optionally) pushes to the Hugging Face Space so the live app updates.
+# Free on GitHub Actions. Does NOT retrain — only re-scores the latest bar.
+
+on:
+  schedule:
+    - cron: "30 12 * * 0-5"      # ~18:15 NPT, Sun–Fri (after NEPSE close)
+  workflow_dispatch: {}           # allow manual run from the Actions tab
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install deps
+        run: pip install -q lightgbm pandas numpy pyarrow arch
+
+      - name: Refresh data bundles
+        run: python refresh_core.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name  "nepse-refresh-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/latest_features.parquet data/risk.parquet data/metrics.json
+          git commit -m "data refresh $(date -u +%Y-%m-%d)" || echo "no changes"
+          git push
+
+      # OPTIONAL: also push to the Hugging Face Space so the live app redeploys.
+      # Add a repo secret HF_TOKEN (write) and set HF_SPACE below, then uncomment.
+      # - name: Push to Hugging Face Space
+      #   env:
+      #     HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      #     HF_SPACE: <your-username>/<your-space>
+      #   run: |
+      #     git push https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE} HEAD:main
