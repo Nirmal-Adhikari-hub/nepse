@@ -55,48 +55,89 @@ scores["fresh"] = scores["asof"] >= "2026-01-01"
 fresh_scores = scores[scores["fresh"]].copy()
 PRICE_SYMS = sorted(set(prices["symbol"]).intersection(scores["symbol"]))
 
-CSS = """
+PALETTES = {
+  "dark":  dict(bg="#0a0e1a", glow="rgba(24,35,63,1)", card="#121a2e", card2="#0f1626",
+                bd="#243049", tx="#e6edf3", mut="#9aa4b6", sb="#0c1220", sbbd="#1c2740",
+                heroto="rgba(20,27,46,.4)", rowbd="#1b2440"),
+  "light": dict(bg="#f4f7fc", glow="rgba(210,228,255,.8)", card="#ffffff", card2="#f7f9fd",
+                bd="#e2e8f2", tx="#0f172a", mut="#566174", sb="#eef2f9", sbbd="#dde5f0",
+                heroto="rgba(236,242,251,.6)", rowbd="#e9eef6"),
+}
+with st.sidebar:
+    st.markdown('<div class="sb-brand">📈 NEPSE·Signals</div>'
+                '<div class="sb-sub">AI forecasts for the Nepal Stock Exchange</div>', unsafe_allow_html=True)
+    LIGHT = st.toggle("☀️ Light mode", value=False, key="lightmode")
+PAL = PALETTES["light" if LIGHT else "dark"]
+st.session_state["_dark"] = not LIGHT
+
+CSS = f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-html, body, [class*="css"], .stApp, button, input, textarea { font-family:'Inter',-apple-system,sans-serif; }
-#MainMenu, header[data-testid="stHeader"], footer, [data-testid="stToolbar"], [data-testid="stDecoration"] { display:none !important; }
-.stApp { background: radial-gradient(1100px 500px at 50% -8%, #18233f 0%, rgba(11,16,32,0) 60%), #0a0e1a; }
-.block-container { max-width:1140px !important; padding:1.1rem 1.2rem 5rem !important; }
-[data-testid="stSidebar"] { background:#0c1220; border-right:1px solid #1c2740; }
-[data-testid="stSidebar"] .sb-brand { font-weight:900; font-size:1.15rem; padding:6px 4px 2px; }
-[data-testid="stSidebar"] .sb-sub { color:#7a849a; font-size:.78rem; padding:0 4px 10px; }
-.nav { display:flex; align-items:center; justify-content:space-between; padding:2px 2px 14px; }
-.brand { font-weight:800; font-size:1.1rem; } .brand .dot{color:#22c55e;}
-.tag { font-size:.72rem; color:#8b95a7; border:1px solid #2a3450; border-radius:999px; padding:4px 10px; }
-.hero { position:relative; border:1px solid #243049; border-radius:20px; padding:34px 30px;
-  background:linear-gradient(135deg, rgba(34,197,94,.10), rgba(56,139,255,.08) 60%, rgba(20,27,46,.4)); overflow:hidden; }
-.hero h1 { font-size:clamp(1.7rem,4vw,2.7rem); font-weight:900; line-height:1.1; margin:0 0 10px; letter-spacing:-.03em; }
-.hero h1 .grad { background:linear-gradient(90deg,#22c55e,#5eead4); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
-.hero p { font-size:clamp(.98rem,2vw,1.15rem); color:#c3cbd9; max-width:700px; margin:0 0 16px; }
-.pills { display:flex; flex-wrap:wrap; gap:8px; } .pill{ font-size:.8rem; color:#cdd5e3; background:rgba(255,255,255,.04); border:1px solid #2a3450; border-radius:999px; padding:5px 12px; } .pill b{color:#fff;}
-.cardgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin:18px 0 6px; }
-.mcard { background:linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.01)); border:1px solid #243049; border-radius:16px; padding:18px; transition:transform .15s, border-color .15s; }
-.mcard:hover { transform:translateY(-3px); border-color:#34507a; }
-.mcard .top { font-size:.76rem; color:#8b95a7; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
-.mcard .val { font-size:1.9rem; font-weight:800; margin:6px 0 2px; } .mcard .sub{ font-size:.82rem; color:#9aa4b6; }
-.green{color:#22c55e;} .blue{color:#5eead4;} .amber{color:#fbbf24;} .red{color:#f87171;}
-.sec { display:flex; align-items:center; gap:10px; margin:30px 0 6px; font-size:1.35rem; font-weight:800; }
-.sec:before { content:""; width:5px; height:24px; border-radius:3px; background:linear-gradient(#22c55e,#0e7a3a); }
-.lead { color:#9aa4b6; margin:0 0 14px; font-size:.95rem; }
-.stButton>button, .stFormSubmitButton>button { background:linear-gradient(90deg,#22c55e,#16a34a); color:#04210f; font-weight:800; border:0; border-radius:12px; padding:.6rem 1rem; }
-[data-testid="stForm"] { background:rgba(255,255,255,.02); border:1px solid #243049 !important; border-radius:18px; padding:18px 18px 6px; }
-[data-testid="stDataFrame"] { border:1px solid #243049; border-radius:14px; overflow:hidden; }
-.disc { background:linear-gradient(90deg, rgba(251,191,36,.10), rgba(251,191,36,.02)); border:1px solid #5a4a1e; border-radius:14px; padding:13px 16px; font-size:.88rem; color:#e8d9ad; margin:14px 0; }
-.readout { background:rgba(255,255,255,.03); border:1px solid #243049; border-left:4px solid #22c55e; border-radius:12px; padding:14px 16px; font-size:1.02rem; }
-.expl { background:rgba(86,139,255,.06); border:1px solid #29406a; border-radius:12px; padding:12px 16px; font-size:.92rem; color:#cdd9ef; margin:6px 0 18px; }
-.metric-row { display:flex; align-items:center; justify-content:space-between; padding:9px 2px; border-bottom:1px solid #1b2440; }
-.metric-row .lab { font-weight:600; } .metric-row .txt { color:#9aa4b6; font-size:.86rem; }
-.badge { font-size:.72rem; font-weight:800; padding:3px 10px; border-radius:999px; }
-.foot { margin-top:36px; padding-top:18px; border-top:1px solid #1e2740; font-size:.82rem; color:#7a849a; }
-@media (max-width:640px){ .block-container{padding:.8rem .8rem 4rem !important;} .hero{padding:24px 18px;} .mcard .val{font-size:1.6rem;} }
+:root {{ --bg:{PAL['bg']}; --glow:{PAL['glow']}; --card:{PAL['card']}; --card2:{PAL['card2']};
+  --bd:{PAL['bd']}; --tx:{PAL['tx']}; --mut:{PAL['mut']}; --sb:{PAL['sb']}; --sbbd:{PAL['sbbd']};
+  --heroto:{PAL['heroto']}; --rowbd:{PAL['rowbd']}; }}
+html, body, [class*="css"], .stApp, button, input, textarea {{ font-family:'Inter',-apple-system,sans-serif; }}
+#MainMenu, header[data-testid="stHeader"], footer, [data-testid="stToolbar"], [data-testid="stDecoration"] {{ display:none !important; }}
+.stApp {{ background: radial-gradient(1100px 500px at 50% -8%, var(--glow) 0%, rgba(0,0,0,0) 60%), var(--bg); color:var(--tx); }}
+.block-container {{ max-width:1140px !important; padding:1.1rem 1.2rem 5rem !important; }}
+.stApp p, .stApp label, .stApp span, .stMarkdown {{ color:var(--tx); }}
+[data-testid="stSidebar"] {{ background:var(--sb); border-right:1px solid var(--sbbd); }}
+.sb-brand {{ font-weight:900; font-size:1.15rem; padding:6px 4px 2px; color:var(--tx); }}
+.sb-sub {{ color:var(--mut); font-size:.78rem; padding:0 4px 10px; }}
+.nav {{ display:flex; align-items:center; justify-content:space-between; padding:2px 2px 14px; }}
+.brand {{ font-weight:800; font-size:1.1rem; color:var(--tx); }} .brand .dot{{color:#22c55e;}}
+.tag {{ font-size:.72rem; color:var(--mut); border:1px solid var(--bd); border-radius:999px; padding:4px 10px; }}
+.hero {{ position:relative; border:1px solid var(--bd); border-radius:20px; padding:34px 30px;
+  background:linear-gradient(135deg, rgba(34,197,94,.12), rgba(56,139,255,.10) 60%, var(--heroto)); overflow:hidden; }}
+.hero h1 {{ font-size:clamp(1.7rem,4vw,2.7rem); font-weight:900; line-height:1.1; margin:0 0 10px; letter-spacing:-.03em; color:var(--tx); }}
+.hero h1 .grad {{ background:linear-gradient(90deg,#22c55e,#0ea5a0); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }}
+.hero p {{ font-size:clamp(.98rem,2vw,1.15rem); color:var(--mut); max-width:700px; margin:0 0 16px; }}
+.pills {{ display:flex; flex-wrap:wrap; gap:8px; }} .pill{{ font-size:.8rem; color:var(--tx); background:var(--card2); border:1px solid var(--bd); border-radius:999px; padding:5px 12px; }}
+.cardgrid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin:18px 0 6px; }}
+.mcard {{ background:var(--card); border:1px solid var(--bd); border-radius:16px; padding:18px; transition:transform .15s; }}
+.mcard:hover {{ transform:translateY(-3px); }}
+.mcard .top {{ font-size:.76rem; color:var(--mut); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }}
+.mcard .val {{ font-size:1.9rem; font-weight:800; margin:6px 0 2px; color:var(--tx); }} .mcard .sub{{ font-size:.82rem; color:var(--mut); }}
+.green{{color:#16a34a;}} .blue{{color:#0ea5a0;}} .amber{{color:#d97706;}} .red{{color:#dc2626;}}
+.sec {{ display:flex; align-items:center; gap:10px; margin:30px 0 6px; font-size:1.35rem; font-weight:800; color:var(--tx); }}
+.sec:before {{ content:""; width:5px; height:24px; border-radius:3px; background:linear-gradient(#22c55e,#0e7a3a); }}
+.lead {{ color:var(--mut); margin:0 0 14px; font-size:.95rem; }}
+.stButton>button, .stFormSubmitButton>button {{ background:linear-gradient(90deg,#22c55e,#16a34a); color:#04210f; font-weight:800; border:0; border-radius:12px; padding:.6rem 1rem; }}
+[data-testid="stForm"] {{ background:var(--card2); border:1px solid var(--bd) !important; border-radius:18px; padding:18px 18px 6px; }}
+.disc {{ background:rgba(251,191,36,.12); border:1px solid rgba(180,140,20,.45); border-radius:14px; padding:13px 16px; font-size:.88rem; color:#b07c12; margin:14px 0; }}
+.readout {{ background:var(--card2); border:1px solid var(--bd); border-left:4px solid #22c55e; border-radius:12px; padding:14px 16px; font-size:1.02rem; color:var(--tx); }}
+.expl {{ background:rgba(56,139,255,.10); border:1px solid rgba(56,139,255,.32); border-radius:12px; padding:12px 16px; font-size:.92rem; color:var(--tx); margin:6px 0 18px; }}
+.metric-row {{ display:flex; align-items:center; justify-content:space-between; padding:9px 2px; border-bottom:1px solid var(--rowbd); }}
+.metric-row .lab {{ font-weight:600; color:var(--tx); }} .metric-row .txt {{ color:var(--mut); font-size:.86rem; }}
+.badge {{ font-size:.72rem; font-weight:800; padding:3px 10px; border-radius:999px; }}
+.foot {{ margin-top:36px; padding-top:18px; border-top:1px solid var(--bd); font-size:.82rem; color:var(--mut); }}
+table.t {{ width:100%; border-collapse:collapse; font-size:.92rem; margin:4px 0; }}
+table.t th {{ text-align:left; color:var(--mut); font-weight:600; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; padding:8px 10px; border-bottom:1px solid var(--bd); }}
+table.t td {{ padding:8px 10px; border-bottom:1px solid var(--rowbd); color:var(--tx); }}
+table.t td.sym {{ font-weight:700; color:#0ea5a0; }}
+table.t tr:hover td {{ background:var(--card2); }}
+@media (max-width:640px){{ .block-container{{padding:.8rem .8rem 4rem !important;}} .hero{{padding:24px 18px;}} .mcard .val{{font-size:1.6rem;}} }}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
+
+
+def html_table(df, color_cols=()):
+    head = "".join(f"<th>{c}</th>" for c in df.columns)
+    body = ""
+    for _, r in df.iterrows():
+        tds = ""
+        for c in df.columns:
+            v = r[c]; cls = "sym" if c.lower() in ("stock", "symbol") else ""
+            style = ""
+            if c in color_cols:
+                try:
+                    style = f"color:{'#16a34a' if float(v) >= 0 else '#dc2626'};font-weight:700"
+                except Exception:
+                    pass
+            tds += f'<td class="{cls}" style="{style}">{v}</td>'
+        body += f"<tr>{tds}</tr>"
+    return f'<table class="t"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
 
 
 # ---------- shared helpers ------------------------------------------------- #
@@ -110,10 +151,13 @@ def conviction_word(p):
 
 
 def theme(fig, h=360, legend=True):
-    fig.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        height=h, margin=dict(l=10, r=10, t=30, b=10), font=dict(color="#c3cbd9"),
+    dark = st.session_state.get("_dark", True)
+    fig.update_layout(template="plotly_dark" if dark else "plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=h,
+        margin=dict(l=10, r=10, t=30, b=10), font=dict(color="#c3cbd9" if dark else "#334155"),
         hovermode="x unified", showlegend=legend, legend=dict(orientation="h", y=1.12, x=0))
-    fig.update_xaxes(gridcolor="rgba(255,255,255,.05)"); fig.update_yaxes(gridcolor="rgba(255,255,255,.05)")
+    grid = "rgba(255,255,255,.06)" if dark else "rgba(0,0,0,.08)"
+    fig.update_xaxes(gridcolor=grid); fig.update_yaxes(gridcolor=grid)
     return fig
 
 
@@ -216,24 +260,27 @@ def page_home():
         else:
             w = (np.ones(len(cand)) if weighting == "Equal" else 1/cand["vol10"].values if weighting == "Lower-risk first" else cand["conviction"].values)
             w = w / w.sum()
-            out = pd.DataFrame({"Stock": cand["symbol"].values, "P(up)": (cand[pcol].values*100).round(1),
-                "Conviction": cand["conviction"].values.round(1), "Risk 10d vol%": cand["vol10"].values.round(1),
-                "Allocation %": (w*100).round(1), "Allocation NPR": (w*capital).round(0).astype(int)})
+            out = pd.DataFrame({"Stock": cand["symbol"].values,
+                "P(up)": [f"{v*100:.1f}%" for v in cand[pcol].values],
+                "Conviction": cand["conviction"].values.round(1),
+                "Risk 10d vol%": cand["vol10"].values.round(1),
+                "Allocation %": (w*100).round(1),
+                "Allocation NPR": [f"{int(round(x)):,}" for x in (w*capital)]})
             st.success(f"Suggested **{len(cand)}-stock basket** · **{risk_app.lower()}** · **{hlabel}** · **NPR {capital:,.0f}**")
-            st.dataframe(out, hide_index=True, use_container_width=True,
-                column_config={"P(up)": st.column_config.NumberColumn(format="%.1f%%"), "Allocation NPR": st.column_config.NumberColumn(format="NPR %d")})
+            st.markdown(html_table(out, color_cols=["Conviction"]), unsafe_allow_html=True)
             st.caption("From the model's conviction & GARCH risk. Not advice — wrong ~45% of the time.")
 
     st.markdown('<div class="sec">📍 Today\'s signals</div>', unsafe_allow_html=True)
     st.markdown(f'<p class="lead">Ranked by 10-day confidence across the <b>{len(fresh_scores)}</b> current stocks. '
                 f'(Full {meta["n_stocks"]}-stock universe in <b>Explore</b>, each dated.)</p>', unsafe_allow_html=True)
     s10 = fresh_scores.sort_values("p10", ascending=False)
-    f = lambda d: pd.DataFrame({"Stock": d["symbol"].values, "P(up)": (d["p10"].values*100).round(1),
-        "Conviction": ((d["p10"].values-.5)*100).round(1), "Risk%": d["vol10"].values.round(1)})
-    cfg = {"P(up)": st.column_config.NumberColumn(format="%.1f%%")}
+    f = lambda d: pd.DataFrame({"Stock": d["symbol"].values,
+        "P(up)": [f"{v*100:.1f}%" for v in d["p10"].values],
+        "Conviction": ((d["p10"].values-.5)*100).round(1),
+        "Risk%": d["vol10"].values.round(1)})
     L, R = st.columns(2)
-    L.markdown("##### ▲ Top 10 — leans UP"); L.dataframe(f(s10.head(10)), hide_index=True, use_container_width=True, column_config=cfg)
-    R.markdown("##### ▼ Bottom 10 — leans DOWN"); R.dataframe(f(s10.tail(10).iloc[::-1]), hide_index=True, use_container_width=True, column_config=cfg)
+    L.markdown("##### ▲ Top 10 — leans UP"); L.markdown(html_table(f(s10.head(10)), color_cols=["Conviction"]), unsafe_allow_html=True)
+    R.markdown("##### ▼ Bottom 10 — leans DOWN"); R.markdown(html_table(f(s10.tail(10).iloc[::-1]), color_cols=["Conviction"]), unsafe_allow_html=True)
     st.info("👉 Open **Explore a stock** for a full per-stock breakdown, or **Assistant** to just ask.", icon="💬")
     st.markdown(f'<div class="foot">📈 <b>NEPSE Signals</b> · educational research, not financial advice · data as of {meta["as_of"]}</div>', unsafe_allow_html=True)
 
@@ -403,8 +450,6 @@ def page_assistant():
 
 
 # --------------------------------------------------------------------------- #
-with st.sidebar:
-    st.markdown('<div class="sb-brand">📈 NEPSE·Signals</div><div class="sb-sub">AI forecasts for the Nepal Stock Exchange</div>', unsafe_allow_html=True)
 nav = st.navigation([
     st.Page(page_home, title="Home", icon="🏠", default=True),
     st.Page(page_explore, title="Explore a stock", icon="🔍"),
