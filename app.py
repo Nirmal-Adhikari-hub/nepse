@@ -227,6 +227,15 @@ def verdict_label(p):
     return "🔴 Avoid"
 
 
+def accuracy_grid(right=57):
+    """100-square visual: `right` greens (correct) + rest muted (missed)."""
+    cells = "".join(
+        f'<span style="display:inline-block;width:13px;height:13px;margin:1.5px;border-radius:3px;'
+        f'background:{"#22c55e" if i < right else "rgba(140,150,170,.30)"}"></span>'
+        for i in range(100))
+    return f'<div style="line-height:0;max-width:170px;margin:6px 0">{cells}</div>'
+
+
 def theme(fig, h=360, legend=True):
     dark = st.session_state.get("_dark", True)
     fig.update_layout(template="plotly_dark" if dark else "plotly_white",
@@ -362,6 +371,10 @@ def page_home():
   <div class="mcard"><div class="top">Backtest 5d, net</div><div class="val green">{m5['strat_x']:.1f}×</div><div class="sub">vs {m5['bh_x']:.1f}× buy &amp; hold</div></div></div>""", unsafe_allow_html=True)
 
     with st.expander("🎓 What does \"accuracy\" actually mean here? (plain English)"):
+        st.markdown("**Out of every 100 predictions, about 57 come true:**")
+        st.markdown(accuracy_grid(57), unsafe_allow_html=True)
+        st.markdown("<span style='color:#22c55e'>🟢 right (57)</span> &nbsp; · &nbsp; "
+                    "⬜ missed (43) &nbsp; — a coin flip would be 50/50.", unsafe_allow_html=True)
         st.markdown(assistant.ACCURACY_PLAIN)
 
     # ---- market outlook (the most accurate signal) ----
