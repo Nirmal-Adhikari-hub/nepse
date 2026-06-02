@@ -506,7 +506,10 @@ def page_explore():
 # =========================================================================== #
 def page_evidence():
     st.markdown('<div class="nav"><div class="brand">📊 Model &amp; Evidence</div></div>', unsafe_allow_html=True)
-    st.markdown('<p class="lead">Everything here is interactive and out-of-sample — the proof the model is real, not curve-fit. Hover any chart.</p>', unsafe_allow_html=True)
+    sig = EV.get("signal", "directional")
+    st.markdown(f'<p class="lead">Evidence for the deployed <b>{sig}</b> recommendation signal — all interactive and '
+                f'out-of-sample (the proof it\'s real, not curve-fit). Its strength shows in the <b>gated accuracy</b> '
+                f'and the <b>cost-aware backtest</b> below, not the raw overall edge. Hover any chart.</p>', unsafe_allow_html=True)
     hz = [str(h) for h in H]
 
     st.markdown('<div class="sec">Accuracy vs a naive baseline</div>', unsafe_allow_html=True)
@@ -529,9 +532,9 @@ def page_evidence():
     fig.add_hline(y=70, line_dash="dot", line_color=GREEN, opacity=.6)
     fig.update_xaxes(title="coverage % (act on only the most confident)", autorange="reversed"); fig.update_yaxes(title="accuracy %")
     st.plotly_chart(theme(fig), use_container_width=True, config={"displayModeBar": False})
-    st.markdown('<div class="expl">📖 If you act on <b>every</b> signal, accuracy ≈55%. If you act on only the model\'s '
-                '<b>most confident</b> calls (move left), accuracy climbs. This is how a "modest" model becomes useful — '
-                'and the honest version of a "70%" target: reachable on a small, high-conviction slice, not every day.</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="expl">📖 If you act on <b>every</b> signal, accuracy is modest (~{EV["per_h"]["10"]["acc"]:.0f}%). '
+                f'Act on only the model\'s <b>most confident</b> picks (move left) and it climbs to ~<b>{HEAD["acc20"]:.0f}%</b>. '
+                f'This is how a "modest" model becomes useful — the edge lives in the high-conviction slice, not every day.</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="sec">Is the edge stable over time?</div>', unsafe_allow_html=True)
     e = EV["per_h"]["10"]
