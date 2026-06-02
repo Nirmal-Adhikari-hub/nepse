@@ -157,6 +157,32 @@ div[data-testid="stPopoverBody"] { width: 460px !important; max-width: 92vw !imp
 @media (max-width:640px){ div[data-testid="stPopoverBody"]{ width: 94vw !important; } }
 </style>""", unsafe_allow_html=True)
 
+st.markdown("""<style>
+/* ===== premium polish + mobile-immersive ===== */
+.stApp { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+html { scroll-behavior: smooth; }
+.mcard { box-shadow: 0 8px 26px -16px rgba(0,0,0,.50); }
+.hero  { box-shadow: 0 28px 70px -38px rgba(0,0,0,.65); }
+.stButton>button, .stFormSubmitButton>button { border-radius:12px !important; transition:filter .15s, transform .08s; }
+.stButton>button:hover { filter:brightness(1.06); } .stButton>button:active { transform:translateY(1px); }
+.sec { scroll-margin-top: 14px; }
+/* MOBILE: full-bleed, safe-area aware (Dynamic Island / notch), big touch targets */
+@media (max-width: 760px) {
+  .block-container { padding-top: calc(0.6rem + env(safe-area-inset-top)) !important;
+    padding-left: max(0.7rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.7rem, env(safe-area-inset-right)) !important; padding-bottom: 5.5rem !important; }
+  .cardgrid { grid-template-columns: 1fr 1fr !important; gap:10px; }
+  .hero { padding: 22px 18px; border-radius:18px; } .hero h1 { font-size: 1.75rem; }
+  .sec { font-size: 1.18rem; margin-top: 24px; }
+  .stButton>button, .stFormSubmitButton>button { min-height: 44px; font-size: 1rem; }
+  [data-baseweb="select"] > div, [data-testid="stTextInput"] input { min-height: 44px; }
+  div[data-testid="stPopover"] { bottom: calc(14px + env(safe-area-inset-bottom)) !important; right: 14px !important; }
+  div[data-testid="stPopover"] > div > button { padding:.7rem 1rem !important; }
+  table.t th, table.t td { padding: 7px 6px; font-size: .84rem; }
+}
+@media (max-width: 430px) { .cardgrid { grid-template-columns: 1fr !important; } }
+</style>""", unsafe_allow_html=True)
+
 if LIGHT:
     st.markdown("""<style>
 /* ===== light-mode widget overrides (Streamlit base theme is dark) ===== */
@@ -186,6 +212,19 @@ label, .stRadio label, .stCheckbox label, [data-testid="stWidgetLabel"] *, [role
 [data-testid="stCaptionContainer"] *, .stCaption { color:#566174 !important; }
 [data-testid="stSidebar"] label, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] a { color:#0f172a !important; }
 [data-testid="stSidebarNav"] a span { color:#0f172a !important; }
+/* alert/info/success/warning boxes: light bg + dark text (base theme is dark) */
+[data-testid="stNotification"], [data-testid="stNotificationContentInfo"], .stAlert,
+div[data-baseweb="notification"] { background:#eaf1fb !important; }
+[data-testid="stNotification"] *, .stAlert * { color:#0f172a !important; }
+/* the floating chat popover window in light mode */
+div[data-testid="stPopoverBody"], div[data-testid="stPopoverBody"] [data-testid="stChatMessage"] { background:#ffffff !important; }
+div[data-testid="stPopoverBody"] * { color:#0f172a !important; }
+/* the invisible sidebar collapse/expand ">" chevron + any header icons -> dark */
+[data-testid="stSidebarCollapseButton"] svg, [data-testid="collapsedControl"] svg,
+[data-testid="stSidebarCollapsedControl"] svg, [data-testid="baseButton-headerNoPadding"] svg,
+button[kind="header"] svg, [data-testid="stSidebarCollapseButton"], [data-testid="collapsedControl"] {
+  color:#0f172a !important; fill:#0f172a !important; }
+[data-testid="collapsedControl"] { background:#e8eef7 !important; border-radius:8px; }
 </style>""", unsafe_allow_html=True)
 
 
@@ -554,7 +593,7 @@ def page_evidence():
     fig.add_bar(name="Model", x=[f"{h}d" for h in hz], y=[EV["per_h"][h]["acc"] for h in hz], marker_color=GREEN,
                 error_y=dict(type="data", array=[EV["per_h"][h]["ci"] for h in hz]))
     fig.add_bar(name="Naive baseline", x=[f"{h}d" for h in hz], y=[EV["per_h"][h]["maj"] for h in hz], marker_color=GREY)
-    fig.add_hline(y=50, line_dash="dash", line_color="white", opacity=.4)
+    fig.add_hline(y=50, line_dash="dash", line_color=("rgba(255,255,255,.45)" if st.session_state.get("_dark",True) else "rgba(15,23,42,.40)"), opacity=.4)
     fig.update_yaxes(range=[45, max(EV["per_h"][h]["acc"] for h in hz)+4], title="accuracy %")
     st.plotly_chart(theme(fig), use_container_width=True, config={"displayModeBar": False})
     st.markdown(f'<div class="expl">📖 The model beats the "just guess the usual outcome" baseline at every horizon — '
@@ -565,7 +604,7 @@ def page_evidence():
     fig = go.Figure()
     for h, cl in zip(hz, [BLUE, GREEN, AMBER]):
         fig.add_scatter(x=EV["per_h"][h]["cov"], y=EV["per_h"][h]["cov_acc"], name=f"{h}d", line=dict(color=cl, width=2))
-    fig.add_hline(y=50, line_dash="dash", line_color="white", opacity=.4)
+    fig.add_hline(y=50, line_dash="dash", line_color=("rgba(255,255,255,.45)" if st.session_state.get("_dark",True) else "rgba(15,23,42,.40)"), opacity=.4)
     fig.add_hline(y=70, line_dash="dot", line_color=GREEN, opacity=.6)
     fig.update_xaxes(title="coverage % (act on only the most confident)", autorange="reversed"); fig.update_yaxes(title="accuracy %")
     st.plotly_chart(theme(fig), use_container_width=True, config={"displayModeBar": False})
@@ -577,7 +616,7 @@ def page_evidence():
     e = EV["per_h"]["10"]
     fig = go.Figure()
     fig.add_scatter(x=e["roll_dates"], y=e["roll_acc"], line=dict(color=GREEN, width=1.6), name="60-day rolling acc")
-    fig.add_hline(y=50, line_dash="dash", line_color="white", opacity=.4)
+    fig.add_hline(y=50, line_dash="dash", line_color=("rgba(255,255,255,.45)" if st.session_state.get("_dark",True) else "rgba(15,23,42,.40)"), opacity=.4)
     fig.add_hline(y=e["acc"], line_dash="dot", line_color=BLUE, opacity=.6)
     fig.update_yaxes(title="accuracy %")
     st.plotly_chart(theme(fig), use_container_width=True, config={"displayModeBar": False})
@@ -600,7 +639,7 @@ def page_evidence():
         st.markdown('<div class="sec">Overfitting check (PBO)</div>', unsafe_allow_html=True)
         fig = go.Figure(go.Bar(x=[f"{h}d" for h in hz], y=[EV["per_h"][h]["pbo"] for h in hz],
             marker_color=[GREEN if EV["per_h"][h]["pbo"] < .5 else RED for h in hz]))
-        fig.add_hline(y=.5, line_dash="dash", line_color="white", opacity=.4)
+        fig.add_hline(y=.5, line_dash="dash", line_color=("rgba(255,255,255,.45)" if st.session_state.get("_dark",True) else "rgba(15,23,42,.40)"), opacity=.4)
         fig.update_yaxes(range=[0, 1], title="PBO")
         st.plotly_chart(theme(fig, 300, False), use_container_width=True, config={"displayModeBar": False})
         st.markdown('<div class="expl">📖 Probability of Backtest Overfitting (López de Prado). ≈0 means the edge would '
