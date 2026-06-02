@@ -31,6 +31,11 @@ def load_meta():   return json.loads((HERE / "data/metrics.json").read_text())
 @st.cache_data
 def load_evidence(): return json.loads((HERE / "data/evidence.json").read_text())
 @st.cache_data
+def load_outlook():
+    import os
+    p = HERE / "data/market_outlook.json"
+    return json.loads(p.read_text()) if os.path.exists(p) else None
+@st.cache_data
 def load_data():
     return (pd.read_parquet(HERE / "data/latest_features.parquet"),
             pd.read_parquet(HERE / "data/risk.parquet"),
@@ -380,6 +385,17 @@ def page_home():
         h = {"~1 week (5d)": 5, "~2 weeks (10d)": 10, "~1 month (20d)": 20}[hlabel]
         pcol = f"px{h}" if HAS_XS else f"p{h}"                  # rank by outperformance conviction
         plab = "P(outperform)" if HAS_XS else "P(up)"
+        # regime: condition recommendation on the overall market climate
+        _ol = load_outlook()
+        mkt_p = (_ol["outlook"].get(str(h), _ol["outlook"]["10"])["p_up"] if _ol else 50)
+        if mkt_p < 45:
+            st.warning(f"🧭 **Bearish market climate** — the model sees only a {mkt_p:.0f}% chance the overall "
+                       f"market rises over this horizon. Even top-ranked picks face headwinds; favour cash, smaller "
+                       f"positions, or waiting. The basket below is *relative* (best of a weak field).", icon="⚠️")
+        elif mkt_p < 50:
+            st.info(f"🧭 **Soft market climate** ({mkt_p:.0f}% up-probability) — be selective and size carefully.", icon="🧭")
+        else:
+            st.success(f"🧭 **Supportive market climate** ({mkt_p:.0f}% up-probability) — a tailwind for the picks below.", icon="🧭")
         pool = fresh_scores.dropna(subset=["vol10"]).copy()
         qcap = {"Conservative": .4, "Balanced": .7, "Aggressive": 1.0}[risk_app]
         cand = pool[(pool[pcol] > .5) & (pool["vol10"] <= pool["vol10"].quantile(qcap))].copy()
