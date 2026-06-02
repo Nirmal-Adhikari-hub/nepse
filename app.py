@@ -153,8 +153,8 @@ div[data-testid="stPopover"] { position: fixed !important; bottom: 22px; right: 
 div[data-testid="stPopover"] > div > button { border-radius: 999px !important;
   background: linear-gradient(90deg,#22c55e,#16a34a) !important; color:#04210f !important; font-weight:800 !important;
   padding:.6rem 1.1rem !important; box-shadow:0 10px 28px -6px rgba(34,197,94,.7) !important; border:0 !important; }
-div[data-testid="stPopoverBody"] { width: 360px !important; max-width: 90vw !important; }
-@media (max-width:640px){ div[data-testid="stPopoverBody"]{ width: 92vw !important; } }
+div[data-testid="stPopoverBody"] { width: 460px !important; max-width: 92vw !important; }
+@media (max-width:640px){ div[data-testid="stPopoverBody"]{ width: 94vw !important; } }
 </style>""", unsafe_allow_html=True)
 
 if LIGHT:
@@ -655,37 +655,68 @@ def page_assistant():
         st.rerun()
 
 
-# ---- floating chat widget (openable on every page) ------------------------ #
+# ---- assistant: floating bubble + immersive full-page ---------------------- #
+GREETING = ("Hi! 👋 I'm your NEPSE assistant. Ask me things like *“top 5 stocks?”*, "
+            "*“how does NABIL look?”*, or *“how accurate is this?”*")
+
+
+def _ask(q):
+    st.session_state.chat.append(("user", q))
+    try:
+        resp, _ = assistant.answer(q, st.session_state.chat[:-1], scores, meta)
+    except Exception:
+        resp = "Sorry — I hit a snag. Try again in a moment."
+    st.session_state.chat.append(("assistant", resp))
+
+
 def chat_widget():
     if "chat" not in st.session_state:
-        st.session_state.chat = [("assistant", "Hi! 👋 Ask me about any NEPSE stock — e.g. *“how does NABIL look?”*")]
+        st.session_state.chat = [("assistant", GREETING)]
     with st.popover("💬  Ask the assistant", use_container_width=False):
-        st.markdown("**📈 NEPSE Assistant**  ·  plain-English stock help")
-        hist = st.container(height=320)
+        top = st.columns([5, 1])
+        top[0].markdown("**📈 NEPSE Assistant**  ·  plain-English help")
+        if top[1].button("⛶", key="enlarge", help="Open full-screen chat"):
+            st.session_state.immersive = True; st.rerun()
+        hist = st.container(height=380)
         with st.form("floatchat", clear_on_submit=True):
             cols = st.columns([5, 1])
-            q = cols[0].text_input("msg", placeholder="e.g. how does HDL look?", label_visibility="collapsed")
+            q = cols[0].text_input("msg", placeholder="e.g. top 5 stocks?", label_visibility="collapsed")
             sent = cols[1].form_submit_button("➤")
         if sent and q:
-            st.session_state.chat.append(("user", q))
-            try:
-                resp, _ = assistant.answer(q, st.session_state.chat[:-1], scores, meta)
-            except Exception:
-                resp = "Sorry — I hit a snag. Try again in a moment."
-            st.session_state.chat.append(("assistant", resp))
+            _ask(q)
         with hist:                       # render AFTER processing so the reply shows without a rerun
-            for role, content in st.session_state.chat[-10:]:
+            for role, content in st.session_state.chat[-12:]:
                 with st.chat_message(role, avatar="📈" if role == "assistant" else None):
                     st.markdown(content)
 
 
-chat_widget()
+def immersive_chat():
+    if "chat" not in st.session_state:
+        st.session_state.chat = [("assistant", GREETING)]
+    c1, c2 = st.columns([6, 1])
+    c1.markdown('<div class="nav"><div class="brand">💬 NEPSE Assistant</div></div>', unsafe_allow_html=True)
+    if c2.button("✕ Close", use_container_width=True):
+        st.session_state.immersive = False; st.rerun()
+    st.markdown('<p class="lead">Your AI guide to NEPSE — plain-English, grounded in the live model. Not financial advice.</p>', unsafe_allow_html=True)
+    chips = st.columns(4)
+    for cc, s in zip(chips, ["Top 5 stocks?", "How does NABIL look?", "How accurate is this?", "What should I avoid?"]):
+        if cc.button(s, use_container_width=True):
+            _ask(s); st.rerun()
+    for role, content in st.session_state.chat:
+        with st.chat_message(role, avatar="📈" if role == "assistant" else None):
+            st.markdown(content)
+    if q := st.chat_input("Ask about any stock or the model…"):
+        _ask(q); st.rerun()
+
 
 # --------------------------------------------------------------------------- #
-nav = st.navigation([
-    st.Page(page_home, title="Home", icon="🏠", default=True),
-    st.Page(page_explore, title="Explore a stock", icon="🔍"),
-    st.Page(page_evidence, title="Model & Evidence", icon="📊"),
-    st.Page(page_assistant, title="Assistant", icon="💬"),
-])
-nav.run()
+if st.session_state.get("immersive"):
+    immersive_chat()
+else:
+    chat_widget()
+    nav = st.navigation([
+        st.Page(page_home, title="Home", icon="🏠", default=True),
+        st.Page(page_explore, title="Explore a stock", icon="🔍"),
+        st.Page(page_evidence, title="Model & Evidence", icon="📊"),
+    ])
+    nav.run()

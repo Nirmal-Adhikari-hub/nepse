@@ -74,18 +74,62 @@ def stock_facts(sym, scores, asof, horizons):
     return "\n".join(parts)
 
 
+def _rankcol(scores):
+    return "px10" if "px10" in getattr(scores, "columns", []) else "p10"
+
+
+def top_picks(scores, n=6, bottom=False):
+    rc = _rankcol(scores)
+    df = scores[scores["fresh"]] if "fresh" in getattr(scores, "columns", []) else scores
+    df = df.sort_values(rc, ascending=bottom).head(n)
+    rows = []
+    for _, r in df.iterrows():
+        vol = r["vol10"] if r["vol10"] == r["vol10"] else None
+        rows.append((r["symbol"], float(r[rc]) * 100, vol))
+    return rows, rc
+
+
+TOP_WORDS = ["top", "best", "recommend", "which stock", "picks", "strongest", "most confident",
+             "good stock", "buy", "5 stock", "watchlist", "what should i"]
+
+
 def grounding(query, scores, meta):
     horizons = meta["horizons"]; asof = meta.get("asof", {})
     m10 = meta["metrics"].get("10", meta["metrics"].get(10, {}))
     facts = [
         f"SITE FACTS: universe={meta['n_stocks']} NEPSE stocks ({meta.get('n_fresh','?')} current), "
         f"{meta['yrs']} yrs data, as of {meta['as_of']}. Model=global LightGBM, out-of-sample tested. "
-        f"10-day directional accuracy={m10.get('acc')}% (baseline {m10.get('maj')}%, edge "
-        f"+{m10.get('edge')}pts), high-conviction accuracy~{m10.get('acc20')}%, overfitting PBO="
-        f"{m10.get('pbo')} (≈0 good). Predicts DIRECTION not price. Not financial advice."]
+        f"High-conviction accuracy~{m10.get('acc20')}% (~57% overall). Predicts direction/outperformance, "
+        f"not price. Not financial advice."]
+    q = query.lower()
+    # if asked for top/best/recommended stocks, inject the ACTUAL current ranked names
+    if any(w in q for w in TOP_WORDS) and not find_tickers(query, list(scores.symbol)):
+        rows, rc = top_picks(scores, 6, bottom=any(w in q for w in ["avoid", "worst", "weak", "sell"]))
+        facts.append("CURRENT TOP PICKS the model is most confident on (rank by " +
+                     ("outperformance" if rc == "px10" else "direction") + " conviction):")
+        for i, (s, conf, vol) in enumerate(rows, 1):
+            rk = "low" if (vol or 6) < 5 else "high" if (vol or 6) > 9 else "moderate"
+            facts.append(f"  {i}. {s} — {conf:.0f}% confidence, {rk} risk")
+        facts.append("You MAY name these specific stocks; they are real current model outputs.")
     for s in find_tickers(query, list(scores.symbol))[:4]:
         facts.append(stock_facts(s, scores, asof, horizons))
     return "\n".join(facts)
+
+
+def friendly_top(scores, meta, n=5, bottom=False):
+    rows, rc = top_picks(scores, n, bottom)
+    if not rows:
+        return "I don't have current rankings to show right now."
+    sig = "most likely to **beat the market**" if rc == "px10" else "most likely to **rise**"
+    head = (f"📉 **{n} stocks to be cautious on** right now (lowest confidence):"
+            if bottom else f"🟢 **Top {n} picks right now** — {sig}:")
+    lines = [head, ""]
+    for i, (s, conf, vol) in enumerate(rows, 1):
+        rk = "low" if (vol or 6) < 5 else "high" if (vol or 6) > 9 else "moderate"
+        lines.append(f"{i}. **{s}** — {conf:.0f}% confidence · {rk} risk")
+    lines.append("\n_Educational only, not financial advice — these are the model's highest-confidence calls "
+                 "(right about 6 in 10 on those). Always do your own research._")
+    return "\n".join(lines)
 
 
 def _lean(p):
@@ -168,11 +212,15 @@ def rule_based(query, scores, meta):
         return f"I don't have data on that one. Try a ticker like NABIL, NMB, or ADBL."
     if any(w in q for w in ["accura", "how good", "trust", "reliable", "right", "correct", "%", "percent"]):
         return ACCURACY_PLAIN
-    if any(w in q for w in ["buy", "recommend", "invest", "pick", "should i", "watch", "top"]):
-        return ("Easiest way: open **Home → 🎯 Get your personalized recommendation**, pick your risk level, "
-                "horizon and budget, and it builds you a basket of the strongest stocks (and warns you if the "
-                "overall market looks weak). Or just ask me *“how does NABIL look?”* for any stock.\n\n"
-                "_Educational only — never invest money you can't afford to lose._")
+    if any(w in q for w in ["avoid", "worst", "weak", "stay away", "sell"]):
+        return friendly_top(scores, meta, 5, bottom=True)
+    if any(w in q for w in TOP_WORDS):
+        n = 5
+        for k in ["10", "ten", "3", "three", "5", "five", "7", "seven"]:
+            if k in q:
+                n = {"10": 10, "ten": 10, "3": 3, "three": 3, "5": 5, "five": 5, "7": 7, "seven": 7}[k]; break
+        return (friendly_top(scores, meta, n) +
+                "\n\n💡 Want it tailored to your budget & risk? Use **Home → 🎯 Get your personalized recommendation**.")
     if any(w in q for w in ["how", "model", "method", "feature", "what is"]):
         return ("In plain terms: the model has studied **23 years** of every NEPSE stock — how prices have been "
                 "moving, how choppy they are, whether they're near highs or lows, trading volume, and the overall "
