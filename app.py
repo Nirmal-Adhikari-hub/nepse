@@ -309,14 +309,15 @@ def page_home():
     st.markdown(f'<div class="nav"><div class="brand">📈 NEPSE<span class="dot">·</span>Signals</div>'
                 f'<div class="tag">updated {meta["as_of"]}</div></div>', unsafe_allow_html=True)
     st.markdown(f"""<div class="hero"><h1>Can a machine predict the <span class="grad">Nepal Stock Exchange?</span></h1>
-  <p>A little — honestly about <b>{m10['acc']:.1f}%</b> of the time on 10-day direction. Small but real.
+  <p>On its <b>high-conviction</b> calls — yes, about <b>{m10['acc20']:.0f}%</b> of the time (~{m10['acc']:.0f}% overall).
   Get a <b>personalized basket</b> below, <b>Explore</b> any stock's chart + forecast, or ask the <b>Assistant</b>.</p>
   <div class="pills"><span class="pill">🏦 <b>{meta['n_stocks']}</b> stocks</span><span class="pill">🗓️ <b>{meta['yrs']}</b> yrs</span>
-  <span class="pill">🔬 out-of-sample</span><span class="pill">⚙️ PBO {m10['pbo']:.2f}</span></div></div>""", unsafe_allow_html=True)
-    st.markdown('<div class="disc">⚠️ <b>Not financial advice.</b> Educational tool. ~55% accuracy means it is wrong nearly half the time.</div>', unsafe_allow_html=True)
+  <span class="pill">🎯 <b>{m10['acc20']:.0f}%</b> on top picks</span><span class="pill">⚙️ PBO {m10['pbo']:.2f}</span></div></div>""", unsafe_allow_html=True)
+    st.markdown('<div class="disc">⚠️ <b>Not financial advice.</b> Educational tool. Low-conviction signals are near a coin '
+                'flip — the edge is in the <b>high-conviction</b> picks. Never invest what you can\'t afford to lose.</div>', unsafe_allow_html=True)
     st.markdown(f"""<div class="cardgrid">
-  <div class="mcard"><div class="top">10-day accuracy</div><div class="val green">{m10['acc']:.1f}%</div><div class="sub">+{m10['edge']:.1f} pts vs baseline</div></div>
-  <div class="mcard"><div class="top">High-conviction</div><div class="val green">{m10['acc20']:.0f}%</div><div class="sub">top-20% confident calls</div></div>
+  <div class="mcard"><div class="top">High-conviction acc</div><div class="val green">{m10['acc20']:.0f}%</div><div class="sub">top-20% most-confident calls</div></div>
+  <div class="mcard"><div class="top">Overall acc (10d)</div><div class="val green">{m10['acc']:.1f}%</div><div class="sub">+{m10['edge']:.1f} pts vs baseline</div></div>
   <div class="mcard"><div class="top">Overfitting (PBO)</div><div class="val blue">{m10['pbo']:.2f}</div><div class="sub">≈0 → real, not curve-fit</div></div>
   <div class="mcard"><div class="top">Backtest 5d, net</div><div class="val green">{m5['strat_x']:.1f}×</div><div class="sub">vs {m5['bh_x']:.1f}× buy &amp; hold</div></div></div>""", unsafe_allow_html=True)
 
