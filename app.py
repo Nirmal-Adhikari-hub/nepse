@@ -208,6 +208,16 @@ def conviction_word(p):
     return "strongly bearish", RED
 
 
+def verdict_label(p):
+    """One-word, plain verdict for tables."""
+    c = (p - .5) * 100
+    if c >= 5:  return "🟢 Strong"
+    if c >= 1.5: return "🟢 Lean up"
+    if c > -1.5: return "🟡 Neutral"
+    if c > -5:  return "🔴 Lean down"
+    return "🔴 Avoid"
+
+
 def theme(fig, h=360, legend=True):
     dark = st.session_state.get("_dark", True)
     fig.update_layout(template="plotly_dark" if dark else "plotly_white",
@@ -397,6 +407,7 @@ def page_home():
             w = (np.ones(len(cand)) if weighting == "Equal" else 1/cand["vol10"].values if weighting == "Lower-risk first" else cand["conviction"].values)
             w = w / w.sum()
             out = pd.DataFrame({"Stock": cand["symbol"].values,
+                "Verdict": [verdict_label(v) for v in cand[pcol].values],
                 plab: [f"{v*100:.1f}%" for v in cand[pcol].values],
                 "Conviction": cand["conviction"].values.round(1),
                 "Risk 10d vol%": cand["vol10"].values.round(1),
@@ -412,6 +423,7 @@ def page_home():
                 f'<b>{len(fresh_scores)}</b> current stocks. (Full {meta["n_stocks"]}-stock universe in <b>Explore</b>, each dated.)</p>', unsafe_allow_html=True)
     s10 = fresh_scores.sort_values(rk, ascending=False)
     f = lambda d: pd.DataFrame({"Stock": d["symbol"].values,
+        "Verdict": [verdict_label(v) for v in d[rk].values],
         plab: [f"{v*100:.1f}%" for v in d[rk].values],
         "Conviction": ((d[rk].values-.5)*100).round(1),
         "Risk%": d["vol10"].values.round(1)})
