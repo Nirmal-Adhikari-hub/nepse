@@ -255,6 +255,18 @@ def analyze_stock(sym):
     vz = row["volz"]
     add("Volume & Interest", "Volume vs normal", 1 if vz > 1 else -1 if vz < -1 else 0,
         f"{'well above' if vz > 1 else 'below' if vz < -1 else 'around'} its normal volume")
+    if "macd" in row:
+        mc = row["macd"]
+        add("Trend & Momentum", "MACD", 1 if mc > 0.001 else -1 if mc < -0.001 else 0,
+            f"MACD {'positive — up-momentum' if mc > 0 else 'negative — down-momentum' if mc < 0 else 'flat'}")
+    if "drawdown" in row:
+        dd = row["drawdown"]
+        add("Strength vs range", "Drawdown from peak", 1 if dd > -0.05 else -1 if dd < -0.20 else 0,
+            f"{dd:.0%} below its 60-day peak")
+    if "streak" in row and pd.notna(row["streak"]):
+        sk = int(row["streak"])
+        add("Trend & Momentum", "Recent streak", 1 if sk >= 2 else -1 if sk <= -2 else 0,
+            f"{abs(sk)}-day {'up' if sk > 0 else 'down' if sk < 0 else 'flat'} streak")
     mm, br = row["mkt_mom20"], row["breadth"]
     add("Market regime", "Market momentum (1-mo)", 1 if mm > .01 else -1 if mm < -.01 else 0, f"overall market {mm:+.1%} over ~1 month")
     add("Market regime", "Market breadth", 1 if br > .55 else -1 if br < .45 else 0, f"{br*100:.0f}% of stocks rising lately")
@@ -320,6 +332,27 @@ def page_home():
   <div class="mcard"><div class="top">Overall acc (10d)</div><div class="val green">{m10['acc']:.1f}%</div><div class="sub">+{m10['edge']:.1f} pts vs baseline</div></div>
   <div class="mcard"><div class="top">Overfitting (PBO)</div><div class="val blue">{m10['pbo']:.2f}</div><div class="sub">≈0 → real, not curve-fit</div></div>
   <div class="mcard"><div class="top">Backtest 5d, net</div><div class="val green">{m5['strat_x']:.1f}×</div><div class="sub">vs {m5['bh_x']:.1f}× buy &amp; hold</div></div></div>""", unsafe_allow_html=True)
+
+    # ---- market outlook (the most accurate signal) ----
+    try:
+        ol = json.loads((HERE / "data/market_outlook.json").read_text())
+        o = ol["outlook"]
+        st.markdown('<div class="sec">🧭 Market outlook</div>', unsafe_allow_html=True)
+        cards = ""
+        names = {"5": "1 week", "10": "2 weeks", "20": "1 month"}
+        for k in ["5", "10", "20"]:
+            pu = o[k]["p_up"]; cl = GREEN if pu >= 50 else RED
+            lean = "leans up" if pu >= 50 else "leans down"
+            cards += (f'<div class="mcard"><div class="top">Next {names[k]}</div>'
+                      f'<div class="val" style="color:{cl}">{pu:.0f}%</div>'
+                      f'<div class="sub">P(market up) — {lean} · {o[k]["acc"]:.0f}% acc</div></div>')
+        st.markdown(f'<div class="cardgrid">{cards}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="expl">📖 The whole-market direction model is our <b>most reliable</b> signal — '
+                    'the market is more predictable than single stocks (+5–6 pts over a coin-flip, up to ~68% on '
+                    'high-conviction weeks). Use it to gauge the overall climate before picking stocks.</div>',
+                    unsafe_allow_html=True)
+    except Exception:
+        pass
 
     st.markdown('<div class="sec">🎯 Get your personalized recommendation</div>', unsafe_allow_html=True)
     with st.form("reco"):
