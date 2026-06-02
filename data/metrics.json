@@ -398,5 +398,43 @@
     "NMB": "2026-06-01"
   },
   "n_fresh": 106,
-  "signal": "directional (v2 features)"
+  "signal": "directional (v2 features)",
+  "xs_metrics": {
+    "5": {
+      "acc": 57.49,
+      "maj": 55.17,
+      "edge": 2.32,
+      "acc20": 64.9,
+      "acc10": 66.8,
+      "auc": 0.5837,
+      "strat_x": 23.64,
+      "bh_x": 2.67,
+      "sharpe": 1.52,
+      "n": 327344
+    },
+    "10": {
+      "acc": 57.12,
+      "maj": 55.61,
+      "edge": 1.5,
+      "acc20": 63.6,
+      "acc10": 65.4,
+      "auc": 0.5731,
+      "strat_x": 4.51,
+      "bh_x": 2.63,
+      "sharpe": 0.73,
+      "n": 325925
+    },
+    "20": {
+      "acc": 57.19,
+      "maj": 56.54,
+      "edge": 0.64,
+      "acc20": 63.8,
+      "acc10": 65.4,
+      "auc": 0.5627,
+      "strat_x": 6.7,
+      "bh_x": 2.61,
+      "sharpe": 0.87,
+      "n": 323080
+    }
+  }
 }

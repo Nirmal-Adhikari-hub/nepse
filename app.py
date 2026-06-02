@@ -37,17 +37,29 @@ def load_data():
             pd.read_parquet(HERE / "data/prices.parquet"))
 @st.cache_resource
 def load_models(hz): return {h: lgb.Booster(model_file=str(HERE / f"models/lgbm_h{h}.txt")) for h in hz}
+@st.cache_resource
+def load_models_xs(hz):
+    import os
+    return {h: lgb.Booster(model_file=str(HERE / f"models/lgbm_xs_h{h}.txt"))
+            for h in hz if os.path.exists(str(HERE / f"models/lgbm_xs_h{h}.txt"))}
 
 
 meta = load_meta(); EV = load_evidence()
 feats, risk, prices = load_data()
 models = load_models(meta["horizons"])
 FEATURES, H = meta["features"], meta["horizons"]
+models_xs = load_models_xs(H)
+HAS_XS = len(models_xs) == len(H)               # beat-market ranking signal available?
 m = meta["metrics"]; m10 = m.get("10", m.get(10)); m5 = m.get("5", m.get(5))
+XM = meta.get("xs_metrics", {}); xm10 = XM.get("10", {})
+# headline metrics prefer the deployed ranking signal (outperformance) when available
+HEAD = dict(acc20=xm10.get("acc20", m10["acc20"]), acc=xm10.get("acc", m10["acc"]),
+            edge=xm10.get("edge", m10["edge"]), kind=("outperformance" if XM else "direction"))
 
 scores = feats[["symbol"]].copy()
 for h in H:
-    scores[f"p{h}"] = models[h].predict(feats[FEATURES].values)
+    scores[f"p{h}"] = models[h].predict(feats[FEATURES].values)          # direction (price cone)
+    scores[f"px{h}"] = (models_xs[h].predict(feats[FEATURES].values) if HAS_XS else scores[f"p{h}"])  # outperform (ranking)
 scores = scores.merge(risk, on="symbol", how="left")
 ASOF = meta.get("asof", {})
 scores["asof"] = scores["symbol"].map(ASOF).fillna(meta["as_of"])
@@ -321,15 +333,15 @@ def page_home():
     st.markdown(f'<div class="nav"><div class="brand">📈 NEPSE<span class="dot">·</span>Signals</div>'
                 f'<div class="tag">updated {meta["as_of"]}</div></div>', unsafe_allow_html=True)
     st.markdown(f"""<div class="hero"><h1>Can a machine predict the <span class="grad">Nepal Stock Exchange?</span></h1>
-  <p>On its <b>high-conviction</b> calls — yes, about <b>{m10['acc20']:.0f}%</b> of the time (~{m10['acc']:.0f}% overall).
+  <p>On its <b>high-conviction</b> picks — yes, about <b>{HEAD['acc20']:.0f}%</b> of the time ({HEAD['kind']}).
   Get a <b>personalized basket</b> below, <b>Explore</b> any stock's chart + forecast, or ask the <b>Assistant</b>.</p>
   <div class="pills"><span class="pill">🏦 <b>{meta['n_stocks']}</b> stocks</span><span class="pill">🗓️ <b>{meta['yrs']}</b> yrs</span>
-  <span class="pill">🎯 <b>{m10['acc20']:.0f}%</b> on top picks</span><span class="pill">⚙️ PBO {m10['pbo']:.2f}</span></div></div>""", unsafe_allow_html=True)
+  <span class="pill">🎯 <b>{HEAD['acc20']:.0f}%</b> on top picks</span><span class="pill">⚙️ PBO {m10['pbo']:.2f}</span></div></div>""", unsafe_allow_html=True)
     st.markdown('<div class="disc">⚠️ <b>Not financial advice.</b> Educational tool. Low-conviction signals are near a coin '
                 'flip — the edge is in the <b>high-conviction</b> picks. Never invest what you can\'t afford to lose.</div>', unsafe_allow_html=True)
     st.markdown(f"""<div class="cardgrid">
-  <div class="mcard"><div class="top">High-conviction acc</div><div class="val green">{m10['acc20']:.0f}%</div><div class="sub">top-20% most-confident calls</div></div>
-  <div class="mcard"><div class="top">Overall acc (10d)</div><div class="val green">{m10['acc']:.1f}%</div><div class="sub">+{m10['edge']:.1f} pts vs baseline</div></div>
+  <div class="mcard"><div class="top">High-conviction acc</div><div class="val green">{HEAD['acc20']:.0f}%</div><div class="sub">top-20% picks ({HEAD['kind']})</div></div>
+  <div class="mcard"><div class="top">Overall acc (10d)</div><div class="val green">{HEAD['acc']:.1f}%</div><div class="sub">+{HEAD['edge']:.1f} pts vs baseline</div></div>
   <div class="mcard"><div class="top">Overfitting (PBO)</div><div class="val blue">{m10['pbo']:.2f}</div><div class="sub">≈0 → real, not curve-fit</div></div>
   <div class="mcard"><div class="top">Backtest 5d, net</div><div class="val green">{m5['strat_x']:.1f}×</div><div class="sub">vs {m5['bh_x']:.1f}× buy &amp; hold</div></div></div>""", unsafe_allow_html=True)
 
@@ -365,7 +377,9 @@ def page_home():
         weighting = e.radio("Split the money", ["Conviction-weighted", "Equal", "Lower-risk first"], index=0, horizontal=True)
         go_btn = st.form_submit_button("🎯  Build my recommendation", use_container_width=True)
     if go_btn:
-        h = {"~1 week (5d)": 5, "~2 weeks (10d)": 10, "~1 month (20d)": 20}[hlabel]; pcol = f"p{h}"
+        h = {"~1 week (5d)": 5, "~2 weeks (10d)": 10, "~1 month (20d)": 20}[hlabel]
+        pcol = f"px{h}" if HAS_XS else f"p{h}"                  # rank by outperformance conviction
+        plab = "P(outperform)" if HAS_XS else "P(up)"
         pool = fresh_scores.dropna(subset=["vol10"]).copy()
         qcap = {"Conservative": .4, "Balanced": .7, "Aggressive": 1.0}[risk_app]
         cand = pool[(pool[pcol] > .5) & (pool["vol10"] <= pool["vol10"].quantile(qcap))].copy()
@@ -373,28 +387,29 @@ def page_home():
         cand["score"] = cand["conviction"] / cand["vol10"] if weighting == "Lower-risk first" else cand["conviction"]
         cand = cand.sort_values("score", ascending=False).head(nstocks)
         if not len(cand):
-            st.error(f"At a **{risk_app.lower()}** level over **{hlabel}**, the model leans bullish on **no stocks within "
-                     f"your risk limit** — the market looks weak, so **cash may be prudent**. Try a longer horizon or higher risk.")
+            st.error(f"At a **{risk_app.lower()}** level over **{hlabel}**, the model expects **no stocks to beat the "
+                     f"market within your risk limit** — a weak climate, so **cash may be prudent**. Try a longer horizon or higher risk.")
         else:
             w = (np.ones(len(cand)) if weighting == "Equal" else 1/cand["vol10"].values if weighting == "Lower-risk first" else cand["conviction"].values)
             w = w / w.sum()
             out = pd.DataFrame({"Stock": cand["symbol"].values,
-                "P(up)": [f"{v*100:.1f}%" for v in cand[pcol].values],
+                plab: [f"{v*100:.1f}%" for v in cand[pcol].values],
                 "Conviction": cand["conviction"].values.round(1),
                 "Risk 10d vol%": cand["vol10"].values.round(1),
                 "Allocation %": (w*100).round(1),
                 "Allocation NPR": [f"{int(round(x)):,}" for x in (w*capital)]})
             st.success(f"Suggested **{len(cand)}-stock basket** · **{risk_app.lower()}** · **{hlabel}** · **NPR {capital:,.0f}**")
             st.markdown(html_table(out, color_cols=["Conviction"]), unsafe_allow_html=True)
-            st.caption("From the model's conviction & GARCH risk. Not advice — wrong ~45% of the time.")
+            st.caption("Ranked by the model's outperformance conviction & GARCH risk. Not advice — frequently wrong.")
 
     st.markdown('<div class="sec">📍 Today\'s signals</div>', unsafe_allow_html=True)
-    st.markdown(f'<p class="lead">Ranked by 10-day confidence across the <b>{len(fresh_scores)}</b> current stocks. '
-                f'(Full {meta["n_stocks"]}-stock universe in <b>Explore</b>, each dated.)</p>', unsafe_allow_html=True)
-    s10 = fresh_scores.sort_values("p10", ascending=False)
+    rk = "px10" if HAS_XS else "p10"; plab = "P(outperform)" if HAS_XS else "P(up)"
+    st.markdown(f'<p class="lead">Ranked by 10-day {"outperformance" if HAS_XS else ""} conviction across the '
+                f'<b>{len(fresh_scores)}</b> current stocks. (Full {meta["n_stocks"]}-stock universe in <b>Explore</b>, each dated.)</p>', unsafe_allow_html=True)
+    s10 = fresh_scores.sort_values(rk, ascending=False)
     f = lambda d: pd.DataFrame({"Stock": d["symbol"].values,
-        "P(up)": [f"{v*100:.1f}%" for v in d["p10"].values],
-        "Conviction": ((d["p10"].values-.5)*100).round(1),
+        plab: [f"{v*100:.1f}%" for v in d[rk].values],
+        "Conviction": ((d[rk].values-.5)*100).round(1),
         "Risk%": d["vol10"].values.round(1)})
     L, R = st.columns(2)
     L.markdown("##### ▲ Top 10 — leans UP"); L.markdown(html_table(f(s10.head(10)), color_cols=["Conviction"]), unsafe_allow_html=True)
@@ -412,18 +427,24 @@ def page_explore():
     hlabel = c2.selectbox("Forecast horizon", ["1 week (5d)", "2 weeks (10d)", "1 month (20d)"], index=1)
     h = {"1 week (5d)": 5, "2 weeks (10d)": 10, "1 month (20d)": 20}[hlabel]
     row = scores[scores.symbol == sym].iloc[0]; p_up = float(row[f"p{h}"]); word, col = conviction_word(p_up)
+    p_out = float(row[f"px{h}"]); oword, ocol = conviction_word(p_out)
     sym_asof = ASOF.get(sym, meta["as_of"])
     if sym_asof < "2026-01-01":
         st.markdown(f'<div class="disc">🕗 <b>{sym}</b> has data through <b>{sym_asof}</b> in our sources — '
                     f'this forecast is computed as of that date (historical, not live).</div>', unsafe_allow_html=True)
-    # relative rank within the same freshness cohort
+    # relative rank by outperformance conviction within the same freshness cohort
+    rk = f"px{h}" if HAS_XS else f"p{h}"
     cohort = fresh_scores if row["fresh"] else scores
-    rank = int((cohort[f"p{h}"] > p_up).sum()) + 1; ntot = len(cohort)
+    rank = int((cohort[rk] > row[rk]).sum()) + 1; ntot = len(cohort)
     fig, info = forecast_figure(sym, h)
+    ocard = (f'<div class="mcard"><div class="top">Outperform conviction</div>'
+             f'<div class="val" style="color:{ocol}">{p_out*100:.0f}%</div>'
+             f'<div class="sub">P(beats market over {h}d)</div></div>') if HAS_XS else ""
     st.markdown(f"""<div class="cardgrid">
   <div class="mcard"><div class="top">Last price</div><div class="val">{info['P0']:.0f}</div><div class="sub">NPR (adjusted)</div></div>
-  <div class="mcard"><div class="top">P(up) over {h}d</div><div class="val" style="color:{col}">{p_up*100:.0f}%</div><div class="sub">{word}</div></div>
-  <div class="mcard"><div class="top">Relative rank</div><div class="val blue">#{rank}</div><div class="sub">of {ntot} (top {rank/ntot*100:.0f}%) by conviction</div></div>
+  {ocard}
+  <div class="mcard"><div class="top">Direction P(up) {h}d</div><div class="val" style="color:{col}">{p_up*100:.0f}%</div><div class="sub">{word}</div></div>
+  <div class="mcard"><div class="top">Relative rank</div><div class="val blue">#{rank}</div><div class="sub">of {ntot} (top {rank/ntot*100:.0f}%)</div></div>
   <div class="mcard"><div class="top">Risk (10d vol)</div><div class="val amber">{info['vol10']:.1f}%</div><div class="sub">GARCH forecast</div></div></div>""", unsafe_allow_html=True)
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     arrow = "↑" if p_up >= .5 else "↓"
